@@ -23,7 +23,7 @@ final authRepositoryProvider = Provider<AuthRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef AuthRepositoryRef = ProviderRef<AuthRepository>;
-String _$folderRepositoryHash() => r'ba4b911417b7ffe054db3a1e27e5ed05b577bbce';
+String _$folderRepositoryHash() => r'bde45dcec7e0ab22d34b122d65330626d00727b9';
 
 /// See also [folderRepository].
 @ProviderFor(folderRepository)
@@ -57,24 +57,25 @@ final wordRepositoryProvider = Provider<WordRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef WordRepositoryRef = ProviderRef<WordRepository>;
-String _$testResultRepositoryHash() =>
-    r'7f61de5028e2ac272d1b623ad777f8fd156f7c56';
+String _$flashcardResultRepositoryHash() =>
+    r'16e875292048fdd694625fac2f4d403c1b9e110e';
 
-/// See also [testResultRepository].
-@ProviderFor(testResultRepository)
-final testResultRepositoryProvider = Provider<TestResultRepository>.internal(
-  testResultRepository,
-  name: r'testResultRepositoryProvider',
+/// See also [flashcardResultRepository].
+@ProviderFor(flashcardResultRepository)
+final flashcardResultRepositoryProvider =
+    Provider<FlashcardResultRepository>.internal(
+  flashcardResultRepository,
+  name: r'flashcardResultRepositoryProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
       ? null
-      : _$testResultRepositoryHash,
+      : _$flashcardResultRepositoryHash,
   dependencies: null,
   allTransitiveDependencies: null,
 );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef TestResultRepositoryRef = ProviderRef<TestResultRepository>;
+typedef FlashcardResultRepositoryRef = ProviderRef<FlashcardResultRepository>;
 String _$settingsRepositoryHash() =>
     r'c11f3897527637880a5ddb6dac0e0d58cdedaa20';
 

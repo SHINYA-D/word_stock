@@ -96,7 +96,7 @@ lib/
 │   │   ├── word_providers.dart       # 単語 UseCase Provider
 │   │   ├── folder_providers.dart     # フォルダ UseCase Provider
 │   │   ├── settings_providers.dart   # 設定 UseCase Provider
-│   │   ├── test_result_providers.dart# 成績 UseCase Provider
+│   │   ├── flashcard_result_providers.dart# 成績 UseCase Provider
 │   │   ├── local_data_source_providers.dart # SQLite LocalDataSource Provider
 │   │   └── sync_providers.dart       # 同期関連（SyncService 等）Provider
 │   ├── error/
@@ -137,12 +137,12 @@ lib/
 │   ├── word/                         # 単語管理
 │   │   ├── word_list_page.dart
 │   │   └── word_list_view_model.dart
-│   ├── test_session/                 # 単語テスト
-│   │   ├── test_settings_page.dart   # テスト設定画面
-│   │   ├── test_page.dart            # テスト実施画面
-│   │   ├── test_session_view_model.dart
-│   │   ├── test_session_state.dart   # TestSessionState（Freezed）
-│   │   └── test_result_page.dart     # テスト結果画面
+│   ├── flashcard_mode/                # 単語テスト
+│   │   ├── flashcard_mode_settings_page.dart   # テスト設定画面
+│   │   ├── flashcard_mode_page.dart            # テスト実施画面
+│   │   ├── flashcard_mode_view_model.dart
+│   │   ├── flashcard_mode_state.dart   # FlashcardModeState（Freezed）
+│   │   └── flashcard_mode_result_page.dart     # テスト結果画面
 │   ├── result/                       # 成績表
 │   │   ├── result_page.dart
 │   │   └── result_view_model.dart
@@ -171,22 +171,22 @@ lib/
 │       ├── settings/
 │       │   ├── get_settings_use_case.dart
 │       │   └── update_settings_use_case.dart
-│       └── test_result/
-│           ├── get_test_results_use_case.dart
-│           └── save_test_result_use_case.dart
+│       └── flashcard_result/
+│           ├── get_flashcard_results_use_case.dart
+│           └── save_flashcard_result_use_case.dart
 │
 ├── domain/                           # ドメイン層
 │   ├── entities/                     # エンティティ（Freezed）
 │   │   ├── app_user.dart
 │   │   ├── folder.dart
 │   │   ├── word.dart
-│   │   ├── test_result.dart
+│   │   ├── flashcard_result.dart
 │   │   └── user_settings.dart
 │   └── repositories/                 # リポジトリインターフェース（抽象クラス）
 │       ├── auth_repository.dart
 │       ├── folder_repository.dart
 │       ├── word_repository.dart
-│       ├── test_result_repository.dart
+│       ├── flashcard_result_repository.dart
 │       └── settings_repository.dart
 │
 └── infrastructure/                   # インフラ層
@@ -198,13 +198,13 @@ lib/
     │   │   ├── tables/                    # テーブル定義（CREATE文）
     │   │   │   ├── folder_table.dart
     │   │   │   ├── word_table.dart
-    │   │   │   ├── test_result_table.dart
+    │   │   │   ├── flashcard_result_table.dart
     │   │   │   ├── settings_table.dart
     │   │   │   ├── sync_queue_table.dart
     │   │   │   └── sync_meta_table.dart
     │   │   ├── folder_local_data_source.dart
     │   │   ├── word_local_data_source.dart
-    │   │   ├── test_result_local_data_source.dart
+    │   │   ├── flashcard_result_local_data_source.dart
     │   │   ├── settings_local_data_source.dart
     │   │   └── sync_queue_data_source.dart # sync_queue へのキュー登録・取得
     │   └── network/
@@ -216,14 +216,14 @@ lib/
         ├── auth_repository_impl.dart
         ├── folder_repository_impl.dart
         ├── word_repository_impl.dart
-        ├── test_result_repository_impl.dart
+        ├── flashcard_result_repository_impl.dart
         ├── settings_repository_impl.dart
         └── mock/                     # 開発用モックリポジトリ（kUseMocks = false）
             ├── mock_auth_repository.dart
             ├── mock_folder_repository.dart
             ├── mock_word_repository.dart
             ├── mock_settings_repository.dart
-            └── mock_test_result_repository.dart
+            └── mock_flashcard_result_repository.dart
 ```
 
 > オフライン同期の詳細な設計（SQLiteテーブル定義・sync_queueによるキューイング・競合解決方式など）は `docs/online_offline.md` を参照。
@@ -275,8 +275,8 @@ lib/
 ```dart
 // Freezed 3.x の構文例
 @freezed
-abstract class TestSessionState with _$TestSessionState {
-  const factory TestSessionState({
+abstract class FlashcardModeState with _$FlashcardModeState {
+  const factory FlashcardModeState({
     required bool isStarted,
     required bool isFinished,
     Word? currentWord,
@@ -284,7 +284,7 @@ abstract class TestSessionState with _$TestSessionState {
     required int total,
     required bool isFlipped,
     required int correctCount,
-  }) = _TestSessionState;
+  }) = _FlashcardModeState;
 }
 
 // sealed class の使用例（Failure など）
@@ -563,12 +563,12 @@ abstract class Folder with _$Folder {
 | 中断時の成績 | 保存しない（成績結果に一切反映しない） |
 | 再開機能 | なし（最初からやり直し） |
 
-#### TestSessionState 定義
+#### FlashcardModeState 定義
 
 ```dart
 @freezed
-abstract class TestSessionState with _$TestSessionState {
-  const factory TestSessionState({
+abstract class FlashcardModeState with _$FlashcardModeState {
+  const factory FlashcardModeState({
     required bool isStarted,
     required bool isFinished,
     Word? currentWord,
@@ -576,7 +576,7 @@ abstract class TestSessionState with _$TestSessionState {
     required int total,
     required bool isFlipped,
     required int correctCount,
-  }) = _TestSessionState;
+  }) = _FlashcardModeState;
 }
 ```
 
@@ -590,21 +590,21 @@ abstract class TestSessionState with _$TestSessionState {
 - 成績データはフォルダに紐づく — **フォルダ削除時に成績データも自動削除**される
 - 成績の個別削除・リセット機能は**提供しない**
 
-#### TestResult エンティティ
+#### FlashcardResult エンティティ
 
 ```dart
 @freezed
-abstract class TestResult with _$TestResult {
-  const factory TestResult({
+abstract class FlashcardResult with _$FlashcardResult {
+  const factory FlashcardResult({
     required String id,
     required String folderId,
     required int totalCount,
     required int correctCount,
     required DateTime date,
     required DateTime updatedAt, // オフライン同期の競合解決（Last-Write-Wins）に使用
-  }) = _TestResult;
+  }) = _FlashcardResult;
 
-  const TestResult._();
+  const FlashcardResult._();
   double get correctRate => totalCount == 0 ? 0 : correctCount / totalCount;
 }
 ```
@@ -655,9 +655,9 @@ abstract class UserSettings with _$UserSettings {
 | パスワードリセット画面 | なし | `presentation/auth/password_reset/password_reset_page.dart` |
 | ホーム画面（フォルダ一覧） | あり | `presentation/home/home_page.dart` |
 | 単語一覧画面 | あり | `presentation/word/word_list_page.dart` |
-| テスト設定画面 | あり | `presentation/test_session/test_settings_page.dart` |
-| テスト画面 | **なし** | `presentation/test_session/test_page.dart` |
-| テスト結果画面 | **なし** | `presentation/test_session/test_result_page.dart` |
+| テスト設定画面 | あり | `presentation/flashcard_mode/flashcard_mode_settings_page.dart` |
+| テスト画面 | **なし** | `presentation/flashcard_mode/flashcard_mode_page.dart` |
+| テスト結果画面 | **なし** | `presentation/flashcard_mode/flashcard_mode_result_page.dart` |
 | 成績表画面 | あり | `presentation/result/result_page.dart` |
 | 設定画面 | あり | `presentation/settings/settings_page.dart` |
 
@@ -669,9 +669,9 @@ abstract class UserSettings with _$UserSettings {
 | LoginRoute | `/login` | 未ログイン時のデフォルト |
 | SignUpRoute | `/sign-up` | |
 | PasswordResetRoute | `/password-reset` | |
-| TestSettingsRoute | `/test-settings/:folderId` | |
-| TestRoute | `/test/:folderId` | |
-| TestResultRoute | `/test-result` | |
+| FlashcardModeSettingsRoute | `/test-settings/:folderId` | |
+| FlashcardModeRoute | `/test/:folderId` | |
+| FlashcardModeResultRoute | `/flashcard-result` | |
 | AppShellRoute | ShellRoute | BottomNav配下 |
 | HomeRoute | `/home` | ShellRoute 内 |
 | FolderRoute | `/folder/:folderId` | ShellRoute 内（単語一覧画面） |
@@ -700,7 +700,7 @@ users/
             back: string               // 意味（裏面）
             createdAt: timestamp
             updatedAt: timestamp       // 競合解決用
-    test_results/
+    flashcard_results/
       {resultId}/
         folderId: string               // 紐づくフォルダID
         totalCount: number
@@ -714,9 +714,9 @@ users/
         updatedAt: timestamp           // 競合解決用
 ```
 
-> **カスケード削除について:** Firestoreはカスケード削除を自動では行わない。フォルダ削除時はアプリ側（infrastructure層 `firestore_data_source.dart`）で配下の words / サブフォルダ / testResults を再帰的に削除する処理を実装すること。
+> **カスケード削除について:** Firestoreはカスケード削除を自動では行わない。フォルダ削除時はアプリ側（infrastructure層 `firestore_data_source.dart`）で配下の words / サブフォルダ / flashcardResults を再帰的に削除する処理を実装すること。
 
-> **ローカルDB（SQLite）とのミラーリングについて:** 本アプリはオフライン同期対応のため、上記Firestore構造とほぼ同一のスキーマを持つSQLiteテーブル（`folders` / `words` / `test_results` / `settings`）をローカルに保持し、UI層は常にSQLiteを読み取り元とする。加えて未同期の変更操作を記録する `sync_queue` テーブル、最終同期時刻を記録する `sync_meta` テーブルを持つ。SQLite側のテーブル定義・カラム（`syncStatus` 等）の詳細は `docs/online_offline.md` を参照。
+> **ローカルDB（SQLite）とのミラーリングについて:** 本アプリはオフライン同期対応のため、上記Firestore構造とほぼ同一のスキーマを持つSQLiteテーブル（`folders` / `words` / `flashcard_results` / `settings`）をローカルに保持し、UI層は常にSQLiteを読み取り元とする。加えて未同期の変更操作を記録する `sync_queue` テーブル、最終同期時刻を記録する `sync_meta` テーブルを持つ。SQLite側のテーブル定義・カラム（`syncStatus` 等）の詳細は `docs/online_offline.md` を参照。
 
 ---
 

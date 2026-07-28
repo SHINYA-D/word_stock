@@ -23,12 +23,12 @@ final folderNamesProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef FolderNamesRef = AutoDisposeFutureProviderRef<Map<String, String>>;
-String _$resultViewModelHash() => r'0e7673cd7c91c00140c4c56f7c79db91b2657f0d';
+String _$resultViewModelHash() => r'9c7d3104d298e4aef48b43a0cbaf7b1ad173e978';
 
 /// See also [ResultViewModel].
 @ProviderFor(ResultViewModel)
 final resultViewModelProvider = AutoDisposeAsyncNotifierProvider<
-    ResultViewModel, List<TestResult>>.internal(
+    ResultViewModel, List<FlashcardResult>>.internal(
   ResultViewModel.new,
   name: r'resultViewModelProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -38,6 +38,6 @@ final resultViewModelProvider = AutoDisposeAsyncNotifierProvider<
   allTransitiveDependencies: null,
 );
 
-typedef _$ResultViewModel = AutoDisposeAsyncNotifier<List<TestResult>>;
+typedef _$ResultViewModel = AutoDisposeAsyncNotifier<List<FlashcardResult>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

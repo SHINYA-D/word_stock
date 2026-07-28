@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:word_stock/core/router/router.dart';
 
-class TestResultPage extends StatelessWidget {
-  const TestResultPage({
+class FlashcardModeResultPage extends StatelessWidget {
+  const FlashcardModeResultPage({
     super.key,
     required this.correctCount,
     required this.total,

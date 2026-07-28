@@ -3,7 +3,7 @@
 // ignore_for_file: type=lint
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
-part of 'test_result.dart';
+part of 'flashcard_result.dart';
 
 // **************************************************************************
 // FreezedGenerator
@@ -13,7 +13,7 @@ part of 'test_result.dart';
 T _$identity<T>(T value) => value;
 
 /// @nodoc
-mixin _$TestResult {
+mixin _$FlashcardResult {
   String get id;
   String get folderId;
   int get totalCount;
@@ -21,18 +21,19 @@ mixin _$TestResult {
   DateTime get date;
   DateTime get updatedAt;
 
-  /// Create a copy of TestResult
+  /// Create a copy of FlashcardResult
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
   @pragma('vm:prefer-inline')
-  $TestResultCopyWith<TestResult> get copyWith =>
-      _$TestResultCopyWithImpl<TestResult>(this as TestResult, _$identity);
+  $FlashcardResultCopyWith<FlashcardResult> get copyWith =>
+      _$FlashcardResultCopyWithImpl<FlashcardResult>(
+          this as FlashcardResult, _$identity);
 
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is TestResult &&
+            other is FlashcardResult &&
             (identical(other.id, id) || other.id == id) &&
             (identical(other.folderId, folderId) ||
                 other.folderId == folderId) &&
@@ -51,15 +52,15 @@ mixin _$TestResult {
 
   @override
   String toString() {
-    return 'TestResult(id: $id, folderId: $folderId, totalCount: $totalCount, correctCount: $correctCount, date: $date, updatedAt: $updatedAt)';
+    return 'FlashcardResult(id: $id, folderId: $folderId, totalCount: $totalCount, correctCount: $correctCount, date: $date, updatedAt: $updatedAt)';
   }
 }
 
 /// @nodoc
-abstract mixin class $TestResultCopyWith<$Res> {
-  factory $TestResultCopyWith(
-          TestResult value, $Res Function(TestResult) _then) =
-      _$TestResultCopyWithImpl;
+abstract mixin class $FlashcardResultCopyWith<$Res> {
+  factory $FlashcardResultCopyWith(
+          FlashcardResult value, $Res Function(FlashcardResult) _then) =
+      _$FlashcardResultCopyWithImpl;
   @useResult
   $Res call(
       {String id,
@@ -71,13 +72,14 @@ abstract mixin class $TestResultCopyWith<$Res> {
 }
 
 /// @nodoc
-class _$TestResultCopyWithImpl<$Res> implements $TestResultCopyWith<$Res> {
-  _$TestResultCopyWithImpl(this._self, this._then);
+class _$FlashcardResultCopyWithImpl<$Res>
+    implements $FlashcardResultCopyWith<$Res> {
+  _$FlashcardResultCopyWithImpl(this._self, this._then);
 
-  final TestResult _self;
-  final $Res Function(TestResult) _then;
+  final FlashcardResult _self;
+  final $Res Function(FlashcardResult) _then;
 
-  /// Create a copy of TestResult
+  /// Create a copy of FlashcardResult
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
@@ -118,8 +120,8 @@ class _$TestResultCopyWithImpl<$Res> implements $TestResultCopyWith<$Res> {
   }
 }
 
-/// Adds pattern-matching-related methods to [TestResult].
-extension TestResultPatterns on TestResult {
+/// Adds pattern-matching-related methods to [FlashcardResult].
+extension FlashcardResultPatterns on FlashcardResult {
   /// A variant of `map` that fallback to returning `orElse`.
   ///
   /// It is equivalent to doing:
@@ -134,12 +136,12 @@ extension TestResultPatterns on TestResult {
 
   @optionalTypeArgs
   TResult maybeMap<TResult extends Object?>(
-    TResult Function(_TestResult value)? $default, {
+    TResult Function(_FlashcardResult value)? $default, {
     required TResult orElse(),
   }) {
     final _that = this;
     switch (_that) {
-      case _TestResult() when $default != null:
+      case _FlashcardResult() when $default != null:
         return $default(_that);
       case _:
         return orElse();
@@ -161,11 +163,11 @@ extension TestResultPatterns on TestResult {
 
   @optionalTypeArgs
   TResult map<TResult extends Object?>(
-    TResult Function(_TestResult value) $default,
+    TResult Function(_FlashcardResult value) $default,
   ) {
     final _that = this;
     switch (_that) {
-      case _TestResult():
+      case _FlashcardResult():
         return $default(_that);
       case _:
         throw StateError('Unexpected subclass');
@@ -186,11 +188,11 @@ extension TestResultPatterns on TestResult {
 
   @optionalTypeArgs
   TResult? mapOrNull<TResult extends Object?>(
-    TResult? Function(_TestResult value)? $default,
+    TResult? Function(_FlashcardResult value)? $default,
   ) {
     final _that = this;
     switch (_that) {
-      case _TestResult() when $default != null:
+      case _FlashcardResult() when $default != null:
         return $default(_that);
       case _:
         return null;
@@ -218,7 +220,7 @@ extension TestResultPatterns on TestResult {
   }) {
     final _that = this;
     switch (_that) {
-      case _TestResult() when $default != null:
+      case _FlashcardResult() when $default != null:
         return $default(_that.id, _that.folderId, _that.totalCount,
             _that.correctCount, _that.date, _that.updatedAt);
       case _:
@@ -247,7 +249,7 @@ extension TestResultPatterns on TestResult {
   ) {
     final _that = this;
     switch (_that) {
-      case _TestResult():
+      case _FlashcardResult():
         return $default(_that.id, _that.folderId, _that.totalCount,
             _that.correctCount, _that.date, _that.updatedAt);
       case _:
@@ -275,7 +277,7 @@ extension TestResultPatterns on TestResult {
   ) {
     final _that = this;
     switch (_that) {
-      case _TestResult() when $default != null:
+      case _FlashcardResult() when $default != null:
         return $default(_that.id, _that.folderId, _that.totalCount,
             _that.correctCount, _that.date, _that.updatedAt);
       case _:
@@ -286,8 +288,8 @@ extension TestResultPatterns on TestResult {
 
 /// @nodoc
 
-class _TestResult extends TestResult {
-  const _TestResult(
+class _FlashcardResult extends FlashcardResult {
+  const _FlashcardResult(
       {required this.id,
       required this.folderId,
       required this.totalCount,
@@ -309,19 +311,19 @@ class _TestResult extends TestResult {
   @override
   final DateTime updatedAt;
 
-  /// Create a copy of TestResult
+  /// Create a copy of FlashcardResult
   /// with the given fields replaced by the non-null parameter values.
   @override
   @JsonKey(includeFromJson: false, includeToJson: false)
   @pragma('vm:prefer-inline')
-  _$TestResultCopyWith<_TestResult> get copyWith =>
-      __$TestResultCopyWithImpl<_TestResult>(this, _$identity);
+  _$FlashcardResultCopyWith<_FlashcardResult> get copyWith =>
+      __$FlashcardResultCopyWithImpl<_FlashcardResult>(this, _$identity);
 
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _TestResult &&
+            other is _FlashcardResult &&
             (identical(other.id, id) || other.id == id) &&
             (identical(other.folderId, folderId) ||
                 other.folderId == folderId) &&
@@ -340,16 +342,16 @@ class _TestResult extends TestResult {
 
   @override
   String toString() {
-    return 'TestResult(id: $id, folderId: $folderId, totalCount: $totalCount, correctCount: $correctCount, date: $date, updatedAt: $updatedAt)';
+    return 'FlashcardResult(id: $id, folderId: $folderId, totalCount: $totalCount, correctCount: $correctCount, date: $date, updatedAt: $updatedAt)';
   }
 }
 
 /// @nodoc
-abstract mixin class _$TestResultCopyWith<$Res>
-    implements $TestResultCopyWith<$Res> {
-  factory _$TestResultCopyWith(
-          _TestResult value, $Res Function(_TestResult) _then) =
-      __$TestResultCopyWithImpl;
+abstract mixin class _$FlashcardResultCopyWith<$Res>
+    implements $FlashcardResultCopyWith<$Res> {
+  factory _$FlashcardResultCopyWith(
+          _FlashcardResult value, $Res Function(_FlashcardResult) _then) =
+      __$FlashcardResultCopyWithImpl;
   @override
   @useResult
   $Res call(
@@ -362,13 +364,14 @@ abstract mixin class _$TestResultCopyWith<$Res>
 }
 
 /// @nodoc
-class __$TestResultCopyWithImpl<$Res> implements _$TestResultCopyWith<$Res> {
-  __$TestResultCopyWithImpl(this._self, this._then);
+class __$FlashcardResultCopyWithImpl<$Res>
+    implements _$FlashcardResultCopyWith<$Res> {
+  __$FlashcardResultCopyWithImpl(this._self, this._then);
 
-  final _TestResult _self;
-  final $Res Function(_TestResult) _then;
+  final _FlashcardResult _self;
+  final $Res Function(_FlashcardResult) _then;
 
-  /// Create a copy of TestResult
+  /// Create a copy of FlashcardResult
   /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
@@ -380,7 +383,7 @@ class __$TestResultCopyWithImpl<$Res> implements _$TestResultCopyWith<$Res> {
     Object? date = null,
     Object? updatedAt = null,
   }) {
-    return _then(_TestResult(
+    return _then(_FlashcardResult(
       id: null == id
           ? _self.id
           : id // ignore: cast_nullable_to_non_nullable

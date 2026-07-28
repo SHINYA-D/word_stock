@@ -28,17 +28,17 @@ void main() {
       );
     });
 
-    test('testResults()は3セグメント(コレクション)のパスを返す', () {
+    test('flashcardResults()は3セグメント(コレクション)のパスを返す', () {
       expect(
-        FirestorePath.testResults('user-1'),
-        'users/user-1/test_results',
+        FirestorePath.flashcardResults('user-1'),
+        'users/user-1/flashcard_results',
       );
     });
 
-    test('testResult()は4セグメント(ドキュメント)のパスを返す', () {
+    test('flashcardResult()は4セグメント(ドキュメント)のパスを返す', () {
       expect(
-        FirestorePath.testResult('user-1', 'result-1'),
-        'users/user-1/test_results/result-1',
+        FirestorePath.flashcardResult('user-1', 'result-1'),
+        'users/user-1/flashcard_results/result-1',
       );
     });
 

@@ -2,16 +2,16 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:word_stock/domain/entities/test_result.dart';
+import 'package:word_stock/domain/entities/flashcard_result.dart';
 import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/test_result_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/test_result_local_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/flashcard_result_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/flashcard_result_local_data_source.dart';
 
 void main() {
   const userId = 'user-1';
 
   late DatabaseHelper dbHelper;
-  late TestResultLocalDataSource dataSource;
+  late FlashcardResultLocalDataSource dataSource;
 
   setUpAll(() async {
     sqfliteFfiInit();
@@ -19,7 +19,7 @@ void main() {
     // 他のテストファイルと同時実行された際にDBファイルのロック競合が
     // 発生しないよう、このテストファイル専用の一時ディレクトリを使う。
     final tempDir = await Directory.systemTemp.createTemp(
-      'test_result_local_data_source_test_',
+      'flashcard_result_local_data_source_test_',
     );
     await databaseFactory.setDatabasesPath(tempDir.path);
   });
@@ -27,11 +27,11 @@ void main() {
   setUp(() async {
     dbHelper = DatabaseHelper();
     final db = await dbHelper.database;
-    await db.delete(TestResultTable.tableName);
-    dataSource = TestResultLocalDataSource(dbHelper);
+    await db.delete(FlashcardResultTable.tableName);
+    dataSource = FlashcardResultLocalDataSource(dbHelper);
   });
 
-  TestResult makeResult(String id, String folderId) => TestResult(
+  FlashcardResult makeResult(String id, String folderId) => FlashcardResult(
         id: id,
         folderId: folderId,
         totalCount: 10,

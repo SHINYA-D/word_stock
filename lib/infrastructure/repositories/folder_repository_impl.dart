@@ -9,9 +9,9 @@ import 'package:word_stock/infrastructure/data_sources/local/database_helper.dar
 import 'package:word_stock/infrastructure/data_sources/local/folder_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/folder_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/test_result_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/flashcard_result_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/word_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/test_result_local_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/flashcard_result_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/word_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/network/connectivity_monitor.dart';
 
@@ -19,14 +19,14 @@ class FolderRepositoryImpl implements FolderRepository {
   FolderRepositoryImpl({
     required FolderLocalDataSource localDataSource,
     required WordLocalDataSource wordLocalDataSource,
-    required TestResultLocalDataSource testResultLocalDataSource,
+    required FlashcardResultLocalDataSource flashcardResultLocalDataSource,
     required FirestoreDataSource remoteDataSource,
     required SyncQueueDataSource syncQueueDataSource,
     required DatabaseHelper dbHelper,
     required ConnectivityMonitor connectivityMonitor,
   })  : _local = localDataSource,
         _wordLocal = wordLocalDataSource,
-        _testResultLocal = testResultLocalDataSource,
+        _flashcardResultLocal = flashcardResultLocalDataSource,
         _remote = remoteDataSource,
         _syncQueue = syncQueueDataSource,
         _dbHelper = dbHelper,
@@ -34,7 +34,7 @@ class FolderRepositoryImpl implements FolderRepository {
 
   final FolderLocalDataSource _local;
   final WordLocalDataSource _wordLocal;
-  final TestResultLocalDataSource _testResultLocal;
+  final FlashcardResultLocalDataSource _flashcardResultLocal;
   final FirestoreDataSource _remote;
   final SyncQueueDataSource _syncQueue;
   final DatabaseHelper _dbHelper;
@@ -187,10 +187,10 @@ class FolderRepositoryImpl implements FolderRepository {
             await _remote.deleteRemoteWord(userId, id, word.id);
           }
           final results =
-              await _testResultLocal.findByUserId(userId, folderId: id);
+              await _flashcardResultLocal.findByUserId(userId, folderId: id);
           for (final result in results) {
-            await _testResultLocal.delete(result.id);
-            await _remote.deleteRemoteTestResult(userId, result.id);
+            await _flashcardResultLocal.delete(result.id);
+            await _remote.deleteRemoteFlashcardResult(userId, result.id);
           }
           await _local.delete(id);
           await _remote.deleteRemoteFolder(userId, id);
@@ -204,7 +204,7 @@ class FolderRepositoryImpl implements FolderRepository {
           final words = await _wordLocal.findByFolderId(id, userId: userId);
           wordsByFolder[id] = words.map((w) => w.id).toList();
           final results =
-              await _testResultLocal.findByUserId(userId, folderId: id);
+              await _flashcardResultLocal.findByUserId(userId, folderId: id);
           resultIdsByFolder[id] = results.map((r) => r.id).toList();
         }
 
@@ -227,14 +227,14 @@ class FolderRepositoryImpl implements FolderRepository {
             }
             for (final resultId in resultIdsByFolder[id]!) {
               await txn.delete(
-                TestResultTable.tableName,
+                FlashcardResultTable.tableName,
                 where: 'id = ?',
                 whereArgs: [resultId],
               );
               await _syncQueue.enqueueInTransaction(
                 txn,
                 operation: 'delete',
-                tableName: TestResultTable.tableName,
+                tableName: FlashcardResultTable.tableName,
                 recordId: resultId,
               );
             }

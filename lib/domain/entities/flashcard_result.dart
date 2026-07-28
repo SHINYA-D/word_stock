@@ -1,19 +1,19 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
-part 'test_result.freezed.dart';
+part 'flashcard_result.freezed.dart';
 
 @freezed
-abstract class TestResult with _$TestResult {
-  const factory TestResult({
+abstract class FlashcardResult with _$FlashcardResult {
+  const factory FlashcardResult({
     required String id,
     required String folderId,
     required int totalCount,
     required int correctCount,
     required DateTime date,
     required DateTime updatedAt,
-  }) = _TestResult;
+  }) = _FlashcardResult;
 
-  const TestResult._();
+  const FlashcardResult._();
 
   double get correctRate =>
       totalCount == 0 ? 0 : correctCount / totalCount;

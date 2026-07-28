@@ -1,11 +1,11 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:word_stock/domain/entities/word.dart';
 
-part 'test_session_state.freezed.dart';
+part 'flashcard_mode_state.freezed.dart';
 
 @freezed
-abstract class TestSessionState with _$TestSessionState {
-  const factory TestSessionState({
+abstract class FlashcardModeState with _$FlashcardModeState {
+  const factory FlashcardModeState({
     required bool isStarted,
     required bool isFinished,
     Word? currentWord,
@@ -13,9 +13,11 @@ abstract class TestSessionState with _$TestSessionState {
     required int total,
     required bool isFlipped,
     required int correctCount,
-  }) = _TestSessionState;
+    @Default(false) bool isSubmitting,
+    String? errorMessage,
+  }) = _FlashcardModeState;
 
-  factory TestSessionState.initial() => const TestSessionState(
+  factory FlashcardModeState.initial() => const FlashcardModeState(
         isStarted: false,
         isFinished: false,
         currentIndex: 0,

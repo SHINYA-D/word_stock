@@ -2,20 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:word_stock/core/di/repository_providers.dart';
-import 'package:word_stock/infrastructure/repositories/mock/mock_test_result_repository.dart';
-import 'package:word_stock/presentation/test_session/test_page.dart';
+import 'package:word_stock/infrastructure/repositories/mock/mock_flashcard_result_repository.dart';
+import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_page.dart';
 
 import '../../helpers/test_helpers.dart';
 
-Widget buildTestPage() {
+Widget buildFlashcardModePage() {
   return ProviderScope(
     overrides: [
       // テスト結果の保存先のみモックに差し替える（Firebase 回避）
-      testResultRepositoryProvider
-          .overrideWithValue(MockTestResultRepository()),
+      flashcardResultRepositoryProvider
+          .overrideWithValue(MockFlashcardResultRepository()),
     ],
     child: MaterialApp(
-      home: TestPage(
+      home: FlashcardModePage(
         folderId: 'folder-1',
         words: testWords, // 3 枚 (apple, banana, cherry)
         shuffle: false,
@@ -27,16 +27,16 @@ Widget buildTestPage() {
 }
 
 void main() {
-  group('TestPage', () {
+  group('FlashcardModePage', () {
     testWidgets('start() 呼び出し前はローディングインジケーターが表示される', (tester) async {
-      await tester.pumpWidget(buildTestPage());
+      await tester.pumpWidget(buildFlashcardModePage());
 
       // addPostFrameCallback が呼ばれる前 → initial 状態
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
 
     testWidgets('start() 後は 1 枚目のカードと進捗カウンターが表示される', (tester) async {
-      await tester.pumpWidget(buildTestPage());
+      await tester.pumpWidget(buildFlashcardModePage());
       // addPostFrameCallback → start() が呼ばれる
       await tester.pump();
 
@@ -50,7 +50,7 @@ void main() {
     });
 
     testWidgets('カードをタップすると裏面が表示され正解・不正解ボタンが現れる', (tester) async {
-      await tester.pumpWidget(buildTestPage());
+      await tester.pumpWidget(buildFlashcardModePage());
       await tester.pump();
 
       // カードをタップ（GestureDetector）
@@ -66,7 +66,7 @@ void main() {
     });
 
     testWidgets('テスト中断確認ダイアログが表示される', (tester) async {
-      await tester.pumpWidget(buildTestPage());
+      await tester.pumpWidget(buildFlashcardModePage());
       await tester.pump();
 
       // PopScope の戻るジェスチャー相当を確認する方法として

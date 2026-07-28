@@ -2,7 +2,7 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'tables/folder_table.dart';
 import 'tables/word_table.dart';
-import 'tables/test_result_table.dart';
+import 'tables/flashcard_result_table.dart';
 import 'tables/settings_table.dart';
 import 'tables/sync_queue_table.dart';
 import 'tables/sync_meta_table.dart';
@@ -37,7 +37,7 @@ class DatabaseHelper {
     await db.transaction((txn) async {
       await FolderTable.onCreate(txn);
       await WordTable.onCreate(txn);
-      await TestResultTable.onCreate(txn);
+      await FlashcardResultTable.onCreate(txn);
       await SettingsTable.onCreate(txn);
       await SyncQueueTable.onCreate(txn);
       await SyncMetaTable.onCreate(txn);

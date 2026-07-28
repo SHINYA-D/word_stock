@@ -3,7 +3,7 @@
 // ignore_for_file: type=lint
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
-part of 'test_session_state.dart';
+part of 'flashcard_mode_state.dart';
 
 // **************************************************************************
 // FreezedGenerator
@@ -13,7 +13,7 @@ part of 'test_session_state.dart';
 T _$identity<T>(T value) => value;
 
 /// @nodoc
-mixin _$TestSessionState {
+mixin _$FlashcardModeState {
   bool get isStarted;
   bool get isFinished;
   Word? get currentWord;
@@ -21,20 +21,22 @@ mixin _$TestSessionState {
   int get total;
   bool get isFlipped;
   int get correctCount;
+  bool get isSubmitting;
+  String? get errorMessage;
 
-  /// Create a copy of TestSessionState
+  /// Create a copy of FlashcardModeState
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
   @pragma('vm:prefer-inline')
-  $TestSessionStateCopyWith<TestSessionState> get copyWith =>
-      _$TestSessionStateCopyWithImpl<TestSessionState>(
-          this as TestSessionState, _$identity);
+  $FlashcardModeStateCopyWith<FlashcardModeState> get copyWith =>
+      _$FlashcardModeStateCopyWithImpl<FlashcardModeState>(
+          this as FlashcardModeState, _$identity);
 
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is TestSessionState &&
+            other is FlashcardModeState &&
             (identical(other.isStarted, isStarted) ||
                 other.isStarted == isStarted) &&
             (identical(other.isFinished, isFinished) ||
@@ -47,24 +49,37 @@ mixin _$TestSessionState {
             (identical(other.isFlipped, isFlipped) ||
                 other.isFlipped == isFlipped) &&
             (identical(other.correctCount, correctCount) ||
-                other.correctCount == correctCount));
+                other.correctCount == correctCount) &&
+            (identical(other.isSubmitting, isSubmitting) ||
+                other.isSubmitting == isSubmitting) &&
+            (identical(other.errorMessage, errorMessage) ||
+                other.errorMessage == errorMessage));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, isStarted, isFinished,
-      currentWord, currentIndex, total, isFlipped, correctCount);
+  int get hashCode => Object.hash(
+      runtimeType,
+      isStarted,
+      isFinished,
+      currentWord,
+      currentIndex,
+      total,
+      isFlipped,
+      correctCount,
+      isSubmitting,
+      errorMessage);
 
   @override
   String toString() {
-    return 'TestSessionState(isStarted: $isStarted, isFinished: $isFinished, currentWord: $currentWord, currentIndex: $currentIndex, total: $total, isFlipped: $isFlipped, correctCount: $correctCount)';
+    return 'FlashcardModeState(isStarted: $isStarted, isFinished: $isFinished, currentWord: $currentWord, currentIndex: $currentIndex, total: $total, isFlipped: $isFlipped, correctCount: $correctCount, isSubmitting: $isSubmitting, errorMessage: $errorMessage)';
   }
 }
 
 /// @nodoc
-abstract mixin class $TestSessionStateCopyWith<$Res> {
-  factory $TestSessionStateCopyWith(
-          TestSessionState value, $Res Function(TestSessionState) _then) =
-      _$TestSessionStateCopyWithImpl;
+abstract mixin class $FlashcardModeStateCopyWith<$Res> {
+  factory $FlashcardModeStateCopyWith(
+          FlashcardModeState value, $Res Function(FlashcardModeState) _then) =
+      _$FlashcardModeStateCopyWithImpl;
   @useResult
   $Res call(
       {bool isStarted,
@@ -73,20 +88,22 @@ abstract mixin class $TestSessionStateCopyWith<$Res> {
       int currentIndex,
       int total,
       bool isFlipped,
-      int correctCount});
+      int correctCount,
+      bool isSubmitting,
+      String? errorMessage});
 
   $WordCopyWith<$Res>? get currentWord;
 }
 
 /// @nodoc
-class _$TestSessionStateCopyWithImpl<$Res>
-    implements $TestSessionStateCopyWith<$Res> {
-  _$TestSessionStateCopyWithImpl(this._self, this._then);
+class _$FlashcardModeStateCopyWithImpl<$Res>
+    implements $FlashcardModeStateCopyWith<$Res> {
+  _$FlashcardModeStateCopyWithImpl(this._self, this._then);
 
-  final TestSessionState _self;
-  final $Res Function(TestSessionState) _then;
+  final FlashcardModeState _self;
+  final $Res Function(FlashcardModeState) _then;
 
-  /// Create a copy of TestSessionState
+  /// Create a copy of FlashcardModeState
   /// with the given fields replaced by the non-null parameter values.
   @pragma('vm:prefer-inline')
   @override
@@ -98,6 +115,8 @@ class _$TestSessionStateCopyWithImpl<$Res>
     Object? total = null,
     Object? isFlipped = null,
     Object? correctCount = null,
+    Object? isSubmitting = null,
+    Object? errorMessage = freezed,
   }) {
     return _then(_self.copyWith(
       isStarted: null == isStarted
@@ -128,10 +147,18 @@ class _$TestSessionStateCopyWithImpl<$Res>
           ? _self.correctCount
           : correctCount // ignore: cast_nullable_to_non_nullable
               as int,
+      isSubmitting: null == isSubmitting
+          ? _self.isSubmitting
+          : isSubmitting // ignore: cast_nullable_to_non_nullable
+              as bool,
+      errorMessage: freezed == errorMessage
+          ? _self.errorMessage
+          : errorMessage // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 
-  /// Create a copy of TestSessionState
+  /// Create a copy of FlashcardModeState
   /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
@@ -146,8 +173,8 @@ class _$TestSessionStateCopyWithImpl<$Res>
   }
 }
 
-/// Adds pattern-matching-related methods to [TestSessionState].
-extension TestSessionStatePatterns on TestSessionState {
+/// Adds pattern-matching-related methods to [FlashcardModeState].
+extension FlashcardModeStatePatterns on FlashcardModeState {
   /// A variant of `map` that fallback to returning `orElse`.
   ///
   /// It is equivalent to doing:
@@ -162,12 +189,12 @@ extension TestSessionStatePatterns on TestSessionState {
 
   @optionalTypeArgs
   TResult maybeMap<TResult extends Object?>(
-    TResult Function(_TestSessionState value)? $default, {
+    TResult Function(_FlashcardModeState value)? $default, {
     required TResult orElse(),
   }) {
     final _that = this;
     switch (_that) {
-      case _TestSessionState() when $default != null:
+      case _FlashcardModeState() when $default != null:
         return $default(_that);
       case _:
         return orElse();
@@ -189,11 +216,11 @@ extension TestSessionStatePatterns on TestSessionState {
 
   @optionalTypeArgs
   TResult map<TResult extends Object?>(
-    TResult Function(_TestSessionState value) $default,
+    TResult Function(_FlashcardModeState value) $default,
   ) {
     final _that = this;
     switch (_that) {
-      case _TestSessionState():
+      case _FlashcardModeState():
         return $default(_that);
       case _:
         throw StateError('Unexpected subclass');
@@ -214,11 +241,11 @@ extension TestSessionStatePatterns on TestSessionState {
 
   @optionalTypeArgs
   TResult? mapOrNull<TResult extends Object?>(
-    TResult? Function(_TestSessionState value)? $default,
+    TResult? Function(_FlashcardModeState value)? $default,
   ) {
     final _that = this;
     switch (_that) {
-      case _TestSessionState() when $default != null:
+      case _FlashcardModeState() when $default != null:
         return $default(_that);
       case _:
         return null;
@@ -239,14 +266,22 @@ extension TestSessionStatePatterns on TestSessionState {
 
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>(
-    TResult Function(bool isStarted, bool isFinished, Word? currentWord,
-            int currentIndex, int total, bool isFlipped, int correctCount)?
+    TResult Function(
+            bool isStarted,
+            bool isFinished,
+            Word? currentWord,
+            int currentIndex,
+            int total,
+            bool isFlipped,
+            int correctCount,
+            bool isSubmitting,
+            String? errorMessage)?
         $default, {
     required TResult orElse(),
   }) {
     final _that = this;
     switch (_that) {
-      case _TestSessionState() when $default != null:
+      case _FlashcardModeState() when $default != null:
         return $default(
             _that.isStarted,
             _that.isFinished,
@@ -254,7 +289,9 @@ extension TestSessionStatePatterns on TestSessionState {
             _that.currentIndex,
             _that.total,
             _that.isFlipped,
-            _that.correctCount);
+            _that.correctCount,
+            _that.isSubmitting,
+            _that.errorMessage);
       case _:
         return orElse();
     }
@@ -275,13 +312,21 @@ extension TestSessionStatePatterns on TestSessionState {
 
   @optionalTypeArgs
   TResult when<TResult extends Object?>(
-    TResult Function(bool isStarted, bool isFinished, Word? currentWord,
-            int currentIndex, int total, bool isFlipped, int correctCount)
+    TResult Function(
+            bool isStarted,
+            bool isFinished,
+            Word? currentWord,
+            int currentIndex,
+            int total,
+            bool isFlipped,
+            int correctCount,
+            bool isSubmitting,
+            String? errorMessage)
         $default,
   ) {
     final _that = this;
     switch (_that) {
-      case _TestSessionState():
+      case _FlashcardModeState():
         return $default(
             _that.isStarted,
             _that.isFinished,
@@ -289,7 +334,9 @@ extension TestSessionStatePatterns on TestSessionState {
             _that.currentIndex,
             _that.total,
             _that.isFlipped,
-            _that.correctCount);
+            _that.correctCount,
+            _that.isSubmitting,
+            _that.errorMessage);
       case _:
         throw StateError('Unexpected subclass');
     }
@@ -309,13 +356,21 @@ extension TestSessionStatePatterns on TestSessionState {
 
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>(
-    TResult? Function(bool isStarted, bool isFinished, Word? currentWord,
-            int currentIndex, int total, bool isFlipped, int correctCount)?
+    TResult? Function(
+            bool isStarted,
+            bool isFinished,
+            Word? currentWord,
+            int currentIndex,
+            int total,
+            bool isFlipped,
+            int correctCount,
+            bool isSubmitting,
+            String? errorMessage)?
         $default,
   ) {
     final _that = this;
     switch (_that) {
-      case _TestSessionState() when $default != null:
+      case _FlashcardModeState() when $default != null:
         return $default(
             _that.isStarted,
             _that.isFinished,
@@ -323,7 +378,9 @@ extension TestSessionStatePatterns on TestSessionState {
             _that.currentIndex,
             _that.total,
             _that.isFlipped,
-            _that.correctCount);
+            _that.correctCount,
+            _that.isSubmitting,
+            _that.errorMessage);
       case _:
         return null;
     }
@@ -332,15 +389,17 @@ extension TestSessionStatePatterns on TestSessionState {
 
 /// @nodoc
 
-class _TestSessionState implements TestSessionState {
-  const _TestSessionState(
+class _FlashcardModeState implements FlashcardModeState {
+  const _FlashcardModeState(
       {required this.isStarted,
       required this.isFinished,
       this.currentWord,
       required this.currentIndex,
       required this.total,
       required this.isFlipped,
-      required this.correctCount});
+      required this.correctCount,
+      this.isSubmitting = false,
+      this.errorMessage});
 
   @override
   final bool isStarted;
@@ -356,20 +415,25 @@ class _TestSessionState implements TestSessionState {
   final bool isFlipped;
   @override
   final int correctCount;
+  @override
+  @JsonKey()
+  final bool isSubmitting;
+  @override
+  final String? errorMessage;
 
-  /// Create a copy of TestSessionState
+  /// Create a copy of FlashcardModeState
   /// with the given fields replaced by the non-null parameter values.
   @override
   @JsonKey(includeFromJson: false, includeToJson: false)
   @pragma('vm:prefer-inline')
-  _$TestSessionStateCopyWith<_TestSessionState> get copyWith =>
-      __$TestSessionStateCopyWithImpl<_TestSessionState>(this, _$identity);
+  _$FlashcardModeStateCopyWith<_FlashcardModeState> get copyWith =>
+      __$FlashcardModeStateCopyWithImpl<_FlashcardModeState>(this, _$identity);
 
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||
         (other.runtimeType == runtimeType &&
-            other is _TestSessionState &&
+            other is _FlashcardModeState &&
             (identical(other.isStarted, isStarted) ||
                 other.isStarted == isStarted) &&
             (identical(other.isFinished, isFinished) ||
@@ -382,25 +446,38 @@ class _TestSessionState implements TestSessionState {
             (identical(other.isFlipped, isFlipped) ||
                 other.isFlipped == isFlipped) &&
             (identical(other.correctCount, correctCount) ||
-                other.correctCount == correctCount));
+                other.correctCount == correctCount) &&
+            (identical(other.isSubmitting, isSubmitting) ||
+                other.isSubmitting == isSubmitting) &&
+            (identical(other.errorMessage, errorMessage) ||
+                other.errorMessage == errorMessage));
   }
 
   @override
-  int get hashCode => Object.hash(runtimeType, isStarted, isFinished,
-      currentWord, currentIndex, total, isFlipped, correctCount);
+  int get hashCode => Object.hash(
+      runtimeType,
+      isStarted,
+      isFinished,
+      currentWord,
+      currentIndex,
+      total,
+      isFlipped,
+      correctCount,
+      isSubmitting,
+      errorMessage);
 
   @override
   String toString() {
-    return 'TestSessionState(isStarted: $isStarted, isFinished: $isFinished, currentWord: $currentWord, currentIndex: $currentIndex, total: $total, isFlipped: $isFlipped, correctCount: $correctCount)';
+    return 'FlashcardModeState(isStarted: $isStarted, isFinished: $isFinished, currentWord: $currentWord, currentIndex: $currentIndex, total: $total, isFlipped: $isFlipped, correctCount: $correctCount, isSubmitting: $isSubmitting, errorMessage: $errorMessage)';
   }
 }
 
 /// @nodoc
-abstract mixin class _$TestSessionStateCopyWith<$Res>
-    implements $TestSessionStateCopyWith<$Res> {
-  factory _$TestSessionStateCopyWith(
-          _TestSessionState value, $Res Function(_TestSessionState) _then) =
-      __$TestSessionStateCopyWithImpl;
+abstract mixin class _$FlashcardModeStateCopyWith<$Res>
+    implements $FlashcardModeStateCopyWith<$Res> {
+  factory _$FlashcardModeStateCopyWith(
+          _FlashcardModeState value, $Res Function(_FlashcardModeState) _then) =
+      __$FlashcardModeStateCopyWithImpl;
   @override
   @useResult
   $Res call(
@@ -410,21 +487,23 @@ abstract mixin class _$TestSessionStateCopyWith<$Res>
       int currentIndex,
       int total,
       bool isFlipped,
-      int correctCount});
+      int correctCount,
+      bool isSubmitting,
+      String? errorMessage});
 
   @override
   $WordCopyWith<$Res>? get currentWord;
 }
 
 /// @nodoc
-class __$TestSessionStateCopyWithImpl<$Res>
-    implements _$TestSessionStateCopyWith<$Res> {
-  __$TestSessionStateCopyWithImpl(this._self, this._then);
+class __$FlashcardModeStateCopyWithImpl<$Res>
+    implements _$FlashcardModeStateCopyWith<$Res> {
+  __$FlashcardModeStateCopyWithImpl(this._self, this._then);
 
-  final _TestSessionState _self;
-  final $Res Function(_TestSessionState) _then;
+  final _FlashcardModeState _self;
+  final $Res Function(_FlashcardModeState) _then;
 
-  /// Create a copy of TestSessionState
+  /// Create a copy of FlashcardModeState
   /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')
@@ -436,8 +515,10 @@ class __$TestSessionStateCopyWithImpl<$Res>
     Object? total = null,
     Object? isFlipped = null,
     Object? correctCount = null,
+    Object? isSubmitting = null,
+    Object? errorMessage = freezed,
   }) {
-    return _then(_TestSessionState(
+    return _then(_FlashcardModeState(
       isStarted: null == isStarted
           ? _self.isStarted
           : isStarted // ignore: cast_nullable_to_non_nullable
@@ -466,10 +547,18 @@ class __$TestSessionStateCopyWithImpl<$Res>
           ? _self.correctCount
           : correctCount // ignore: cast_nullable_to_non_nullable
               as int,
+      isSubmitting: null == isSubmitting
+          ? _self.isSubmitting
+          : isSubmitting // ignore: cast_nullable_to_non_nullable
+              as bool,
+      errorMessage: freezed == errorMessage
+          ? _self.errorMessage
+          : errorMessage // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 
-  /// Create a copy of TestSessionState
+  /// Create a copy of FlashcardModeState
   /// with the given fields replaced by the non-null parameter values.
   @override
   @pragma('vm:prefer-inline')

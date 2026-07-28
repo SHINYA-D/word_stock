@@ -1,5 +1,5 @@
 import 'package:word_stock/domain/entities/folder.dart';
-import 'package:word_stock/domain/entities/test_result.dart';
+import 'package:word_stock/domain/entities/flashcard_result.dart';
 import 'package:word_stock/domain/entities/user_settings.dart';
 import 'package:word_stock/domain/entities/word.dart';
 import 'package:word_stock/infrastructure/data_sources/firestore_data_source.dart';
@@ -16,8 +16,8 @@ class FakeFirestoreDataSource implements FirestoreDataSource {
   final List<({Word word, String userId, String folderId})> writtenWords = [];
   final List<({String userId, String folderId, String wordId})>
       deletedWords = [];
-  final List<({TestResult result, String userId})> writtenTestResults = [];
-  final List<({String userId, String testResultId})> deletedTestResults = [];
+  final List<({FlashcardResult result, String userId})> writtenFlashcardResults = [];
+  final List<({String userId, String flashcardResultId})> deletedFlashcardResults = [];
   final List<({UserSettings settings, String userId})> writtenSettings = [];
 
   /// テストから任意の例外を投げさせたい場合に設定する。
@@ -57,18 +57,18 @@ class FakeFirestoreDataSource implements FirestoreDataSource {
   }
 
   @override
-  Future<void> writeTestResult(TestResult result, String userId) async {
+  Future<void> writeFlashcardResult(FlashcardResult result, String userId) async {
     _maybeThrow();
-    writtenTestResults.add((result: result, userId: userId));
+    writtenFlashcardResults.add((result: result, userId: userId));
   }
 
   @override
-  Future<void> deleteRemoteTestResult(
+  Future<void> deleteRemoteFlashcardResult(
     String userId,
-    String testResultId,
+    String flashcardResultId,
   ) async {
     _maybeThrow();
-    deletedTestResults.add((userId: userId, testResultId: testResultId));
+    deletedFlashcardResults.add((userId: userId, flashcardResultId: flashcardResultId));
   }
 
   @override

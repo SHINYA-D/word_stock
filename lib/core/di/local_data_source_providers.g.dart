@@ -95,25 +95,26 @@ final wordLocalDataSourceProvider = Provider<WordLocalDataSource>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef WordLocalDataSourceRef = ProviderRef<WordLocalDataSource>;
-String _$testResultLocalDataSourceHash() =>
-    r'c086b7cfa0dc2ce6639feea1658a770ba3221834';
+String _$flashcardResultLocalDataSourceHash() =>
+    r'f2ed1741549f7b2e7e9cc38ff072ad76e327a2d7';
 
-/// See also [testResultLocalDataSource].
-@ProviderFor(testResultLocalDataSource)
-final testResultLocalDataSourceProvider =
-    Provider<TestResultLocalDataSource>.internal(
-  testResultLocalDataSource,
-  name: r'testResultLocalDataSourceProvider',
+/// See also [flashcardResultLocalDataSource].
+@ProviderFor(flashcardResultLocalDataSource)
+final flashcardResultLocalDataSourceProvider =
+    Provider<FlashcardResultLocalDataSource>.internal(
+  flashcardResultLocalDataSource,
+  name: r'flashcardResultLocalDataSourceProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
       ? null
-      : _$testResultLocalDataSourceHash,
+      : _$flashcardResultLocalDataSourceHash,
   dependencies: null,
   allTransitiveDependencies: null,
 );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef TestResultLocalDataSourceRef = ProviderRef<TestResultLocalDataSource>;
+typedef FlashcardResultLocalDataSourceRef
+    = ProviderRef<FlashcardResultLocalDataSource>;
 String _$settingsLocalDataSourceHash() =>
     r'995acde96095c83ea330a36423159e76d92d8020';
 

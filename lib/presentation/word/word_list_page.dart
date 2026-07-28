@@ -41,7 +41,7 @@ class _WordListPageState extends ConsumerState<WordListPage> {
           IconButton(
             icon: const Icon(Icons.play_arrow),
             tooltip: 'テストを開始',
-            onPressed: () => TestSettingsRoute(
+            onPressed: () => FlashcardModeSettingsRoute(
               folderId: widget.folderId,
               $extra: widget.folderName,
             ).push(context),

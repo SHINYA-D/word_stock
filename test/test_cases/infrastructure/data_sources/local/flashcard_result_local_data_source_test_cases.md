@@ -1,11 +1,11 @@
-# test_result_local_data_source_test_cases.md
+# flashcard_result_local_data_source_test_cases.md
 
 ## 対象クラス / メソッド
 
 | 項目 | 値 |
 |------|-----|
-| ファイルパス | lib/infrastructure/data_sources/local/test_result_local_data_source.dart |
-| クラス名 | TestResultLocalDataSource |
+| ファイルパス | lib/infrastructure/data_sources/local/flashcard_result_local_data_source.dart |
+| クラス名 | FlashcardResultLocalDataSource |
 | テスト対象メソッド | delete()（新規追加分）、insert() / findByUserId()（deleteの前提として補助的に確認） |
 
 ## 実行環境について

@@ -5,16 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:word_stock/core/error/failure.dart';
 import 'package:word_stock/domain/entities/folder.dart';
-import 'package:word_stock/domain/entities/test_result.dart';
+import 'package:word_stock/domain/entities/flashcard_result.dart';
 import 'package:word_stock/domain/entities/word.dart';
 import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
 import 'package:word_stock/infrastructure/data_sources/local/folder_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/folder_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/sync_queue_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/test_result_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/flashcard_result_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/word_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/test_result_local_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/flashcard_result_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/word_local_data_source.dart';
 import 'package:word_stock/infrastructure/repositories/folder_repository_impl.dart';
 
@@ -26,7 +26,7 @@ void main() {
   late DatabaseHelper dbHelper;
   late FolderLocalDataSource folderLocal;
   late WordLocalDataSource wordLocal;
-  late TestResultLocalDataSource testResultLocal;
+  late FlashcardResultLocalDataSource flashcardResultLocal;
   late SyncQueueDataSource syncQueue;
   late FakeFirestoreDataSource fakeRemote;
   late FakeConnectivityMonitor fakeConnectivity;
@@ -50,12 +50,12 @@ void main() {
     final db = await dbHelper.database;
     await db.delete(FolderTable.tableName);
     await db.delete(WordTable.tableName);
-    await db.delete(TestResultTable.tableName);
+    await db.delete(FlashcardResultTable.tableName);
     await db.delete(SyncQueueTable.tableName);
 
     folderLocal = FolderLocalDataSource(dbHelper);
     wordLocal = WordLocalDataSource(dbHelper);
-    testResultLocal = TestResultLocalDataSource(dbHelper);
+    flashcardResultLocal = FlashcardResultLocalDataSource(dbHelper);
     syncQueue = SyncQueueDataSource(dbHelper);
     fakeRemote = FakeFirestoreDataSource();
     fakeConnectivity = FakeConnectivityMonitor(online: true);
@@ -63,7 +63,7 @@ void main() {
     repository = FolderRepositoryImpl(
       localDataSource: folderLocal,
       wordLocalDataSource: wordLocal,
-      testResultLocalDataSource: testResultLocal,
+      flashcardResultLocalDataSource: flashcardResultLocal,
       remoteDataSource: fakeRemote,
       syncQueueDataSource: syncQueue,
       dbHelper: dbHelper,
@@ -87,7 +87,7 @@ void main() {
         updatedAt: DateTime(2024, 1, 1),
       );
 
-  TestResult makeTestResult(String id, String folderId) => TestResult(
+  FlashcardResult makeFlashcardResult(String id, String folderId) => FlashcardResult(
         id: id,
         folderId: folderId,
         totalCount: 10,
@@ -108,9 +108,9 @@ void main() {
         folderId: folderId,
       );
 
-  Future<void> insertTestResult(String id, String folderId) =>
-      testResultLocal.insert(
-        makeTestResult(id, folderId),
+  Future<void> insertFlashcardResult(String id, String folderId) =>
+      flashcardResultLocal.insert(
+        makeFlashcardResult(id, folderId),
         userId: userId,
       );
 
@@ -148,16 +148,16 @@ void main() {
 
     test('フォルダ配下の成績データがある場合、成績データもローカル・リモートの両方から削除される', () async {
       await insertFolder('root');
-      await insertTestResult('result-1', 'root');
+      await insertFlashcardResult('result-1', 'root');
 
       await repository.deleteFolder(userId: userId, folderId: 'root');
 
       expect(
-        await testResultLocal.findByUserId(userId, folderId: 'root'),
+        await flashcardResultLocal.findByUserId(userId, folderId: 'root'),
         isEmpty,
       );
-      expect(fakeRemote.deletedTestResults, [
-        (userId: userId, testResultId: 'result-1'),
+      expect(fakeRemote.deletedFlashcardResults, [
+        (userId: userId, flashcardResultId: 'result-1'),
       ]);
     });
 
@@ -180,7 +180,7 @@ void main() {
       await insertFolder('child', parentFolderId: 'root');
       await insertFolder('grandchild', parentFolderId: 'child');
       await insertWord('word-1', 'grandchild');
-      await insertTestResult('result-1', 'grandchild');
+      await insertFlashcardResult('result-1', 'grandchild');
 
       await repository.deleteFolder(userId: userId, folderId: 'root');
 
@@ -192,7 +192,7 @@ void main() {
         isEmpty,
       );
       expect(
-        await testResultLocal.findByUserId(userId, folderId: 'grandchild'),
+        await flashcardResultLocal.findByUserId(userId, folderId: 'grandchild'),
         isEmpty,
       );
       expect(
@@ -202,8 +202,8 @@ void main() {
       expect(fakeRemote.deletedWords, [
         (userId: userId, folderId: 'grandchild', wordId: 'word-1'),
       ]);
-      expect(fakeRemote.deletedTestResults, [
-        (userId: userId, testResultId: 'result-1'),
+      expect(fakeRemote.deletedFlashcardResults, [
+        (userId: userId, flashcardResultId: 'result-1'),
       ]);
     });
 
@@ -278,18 +278,18 @@ void main() {
         'それらもローカルから削除されsync_queueにdelete登録される', () async {
       await insertFolder('root');
       await insertWord('word-1', 'root');
-      await insertTestResult('result-1', 'root');
+      await insertFlashcardResult('result-1', 'root');
 
       await repository.deleteFolder(userId: userId, folderId: 'root');
 
       expect(await wordLocal.findByFolderId('root', userId: userId), isEmpty);
       expect(
-        await testResultLocal.findByUserId(userId, folderId: 'root'),
+        await flashcardResultLocal.findByUserId(userId, folderId: 'root'),
         isEmpty,
       );
       expect(await queueRowsFor(WordTable.tableName, 'word-1'), hasLength(1));
       expect(
-        await queueRowsFor(TestResultTable.tableName, 'result-1'),
+        await queueRowsFor(FlashcardResultTable.tableName, 'result-1'),
         hasLength(1),
       );
     });
