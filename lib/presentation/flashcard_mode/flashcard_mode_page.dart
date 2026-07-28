@@ -5,11 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:word_stock/core/router/router.dart';
 import 'package:word_stock/domain/entities/word.dart';
-import 'package:word_stock/presentation/test_session/test_session_state.dart';
-import 'package:word_stock/presentation/test_session/test_session_view_model.dart';
+import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_state.dart';
+import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_view_model.dart';
 
-class TestPage extends ConsumerStatefulWidget {
-  const TestPage({
+class FlashcardModePage extends ConsumerStatefulWidget {
+  const FlashcardModePage({
     super.key,
     required this.folderId,
     required this.words,
@@ -25,10 +25,10 @@ class TestPage extends ConsumerStatefulWidget {
   final String userId;
 
   @override
-  ConsumerState<TestPage> createState() => _TestPageState();
+  ConsumerState<FlashcardModePage> createState() => _FlashcardModePageState();
 }
 
-class _TestPageState extends ConsumerState<TestPage>
+class _FlashcardModePageState extends ConsumerState<FlashcardModePage>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _flipAnimation;
@@ -46,7 +46,7 @@ class _TestPageState extends ConsumerState<TestPage>
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(testSessionViewModelProvider.notifier).start(
+      ref.read(flashcardModeViewModelProvider.notifier).start(
             words: widget.words,
             shuffle: widget.shuffle,
             userId: widget.userId,
@@ -61,7 +61,7 @@ class _TestPageState extends ConsumerState<TestPage>
     super.dispose();
   }
 
-  Future<void> _flip(TestSessionViewModel vm) async {
+  Future<void> _flip(FlashcardModeViewModel vm) async {
     if (_controller.isAnimating) return;
     await _controller.animateTo(0.5);
     vm.flip();
@@ -75,14 +75,26 @@ class _TestPageState extends ConsumerState<TestPage>
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(testSessionViewModelProvider);
-    final vm = ref.read(testSessionViewModelProvider.notifier);
+    final state = ref.watch(flashcardModeViewModelProvider);
+    final vm = ref.read(flashcardModeViewModelProvider.notifier);
 
-    ref.listen<TestSessionState>(testSessionViewModelProvider, (prev, next) {
+    ref.listen<FlashcardModeState>(flashcardModeViewModelProvider, (prev, next) {
       if (!next.isFinished) return;
       if (prev?.isFinished ?? false) return;
-      TestResultRoute(correctCount: next.correctCount, total: next.total)
-          .pushReplacement(context);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        FlashcardModeResultRoute(
+          correctCount: next.correctCount,
+          total: next.total,
+        ).pushReplacement(context);
+      });
+    });
+
+    ref.listen<FlashcardModeState>(flashcardModeViewModelProvider, (prev, next) {
+      if (next.errorMessage == null) return;
+      if (prev?.errorMessage == next.errorMessage) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(next.errorMessage!)));
     });
 
     return PopScope(
@@ -121,6 +133,7 @@ class _TestPageState extends ConsumerState<TestPage>
                 currentIndex: state.currentIndex,
                 total: state.total,
                 isFlipped: state.isFlipped,
+                isSubmitting: state.isSubmitting,
                 flipAnimation: _flipAnimation,
                 onFlip: () => _flip(vm),
                 onCorrect: () {
@@ -146,6 +159,7 @@ class _InProgressView extends StatelessWidget {
     required this.currentIndex,
     required this.total,
     required this.isFlipped,
+    required this.isSubmitting,
     required this.flipAnimation,
     required this.onFlip,
     required this.onCorrect,
@@ -156,6 +170,7 @@ class _InProgressView extends StatelessWidget {
   final int currentIndex;
   final int total;
   final bool isFlipped;
+  final bool isSubmitting;
   final Animation<double> flipAnimation;
   final VoidCallback onFlip;
   final VoidCallback onCorrect;
@@ -244,7 +259,7 @@ class _InProgressView extends StatelessWidget {
                           label: '不正解',
                           icon: Icons.close_rounded,
                           color: Theme.of(context).colorScheme.error,
-                          onTap: onIncorrect,
+                          onTap: isSubmitting ? null : onIncorrect,
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -253,7 +268,7 @@ class _InProgressView extends StatelessWidget {
                           label: '正解',
                           icon: Icons.check_rounded,
                           color: Colors.green.shade600,
-                          onTap: onCorrect,
+                          onTap: isSubmitting ? null : onCorrect,
                         ),
                       ),
                     ],
@@ -358,7 +373,7 @@ class _JudgeButton extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

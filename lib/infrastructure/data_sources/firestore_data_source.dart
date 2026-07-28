@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:word_stock/core/firebase/firestore_path.dart';
 import 'package:word_stock/domain/entities/folder.dart';
-import 'package:word_stock/domain/entities/test_result.dart';
+import 'package:word_stock/domain/entities/flashcard_result.dart';
 import 'package:word_stock/domain/entities/user_settings.dart';
 import 'package:word_stock/domain/entities/word.dart';
 
@@ -44,9 +44,9 @@ class FirestoreDataSource {
         .delete();
   }
 
-  Future<void> writeTestResult(TestResult result, String userId) {
+  Future<void> writeFlashcardResult(FlashcardResult result, String userId) {
     return _firestore
-        .doc(FirestorePath.testResult(userId, result.id))
+        .doc(FirestorePath.flashcardResult(userId, result.id))
         .set({
       'folderId': result.folderId,
       'totalCount': result.totalCount,
@@ -56,8 +56,8 @@ class FirestoreDataSource {
     });
   }
 
-  Future<void> deleteRemoteTestResult(String userId, String testResultId) {
-    return _firestore.doc(FirestorePath.testResult(userId, testResultId)).delete();
+  Future<void> deleteRemoteFlashcardResult(String userId, String flashcardResultId) {
+    return _firestore.doc(FirestorePath.flashcardResult(userId, flashcardResultId)).delete();
   }
 
   Future<void> writeSettings(UserSettings settings, String userId) {

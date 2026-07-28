@@ -11,9 +11,9 @@ List<RouteBase> get $appRoutes => [
       $loginRoute,
       $signUpRoute,
       $passwordResetRoute,
-      $testSettingsRoute,
-      $testRoute,
-      $testResultRoute,
+      $flashcardModeSettingsRoute,
+      $flashcardModeRoute,
+      $flashcardModeResultRoute,
       $appShellRoute,
     ];
 
@@ -106,13 +106,14 @@ extension $PasswordResetRouteExtension on PasswordResetRoute {
   void replace(BuildContext context) => context.replace(location);
 }
 
-RouteBase get $testSettingsRoute => GoRouteData.$route(
+RouteBase get $flashcardModeSettingsRoute => GoRouteData.$route(
       path: '/test-settings/:folderId',
-      factory: $TestSettingsRouteExtension._fromState,
+      factory: $FlashcardModeSettingsRouteExtension._fromState,
     );
 
-extension $TestSettingsRouteExtension on TestSettingsRoute {
-  static TestSettingsRoute _fromState(GoRouterState state) => TestSettingsRoute(
+extension $FlashcardModeSettingsRouteExtension on FlashcardModeSettingsRoute {
+  static FlashcardModeSettingsRoute _fromState(GoRouterState state) =>
+      FlashcardModeSettingsRoute(
         folderId: state.pathParameters['folderId']!,
         $extra: state.extra as String?,
       );
@@ -133,15 +134,16 @@ extension $TestSettingsRouteExtension on TestSettingsRoute {
       context.replace(location, extra: $extra);
 }
 
-RouteBase get $testRoute => GoRouteData.$route(
+RouteBase get $flashcardModeRoute => GoRouteData.$route(
       path: '/test/:folderId',
-      factory: $TestRouteExtension._fromState,
+      factory: $FlashcardModeRouteExtension._fromState,
     );
 
-extension $TestRouteExtension on TestRoute {
-  static TestRoute _fromState(GoRouterState state) => TestRoute(
+extension $FlashcardModeRouteExtension on FlashcardModeRoute {
+  static FlashcardModeRoute _fromState(GoRouterState state) =>
+      FlashcardModeRoute(
         folderId: state.pathParameters['folderId']!,
-        $extra: state.extra as TestRouteExtra,
+        $extra: state.extra as FlashcardModeRouteExtra,
       );
 
   String get location => GoRouteData.$location(
@@ -160,19 +162,20 @@ extension $TestRouteExtension on TestRoute {
       context.replace(location, extra: $extra);
 }
 
-RouteBase get $testResultRoute => GoRouteData.$route(
-      path: '/test-result',
-      factory: $TestResultRouteExtension._fromState,
+RouteBase get $flashcardModeResultRoute => GoRouteData.$route(
+      path: '/flashcard-result',
+      factory: $FlashcardModeResultRouteExtension._fromState,
     );
 
-extension $TestResultRouteExtension on TestResultRoute {
-  static TestResultRoute _fromState(GoRouterState state) => TestResultRoute(
+extension $FlashcardModeResultRouteExtension on FlashcardModeResultRoute {
+  static FlashcardModeResultRoute _fromState(GoRouterState state) =>
+      FlashcardModeResultRoute(
         correctCount: int.parse(state.uri.queryParameters['correct-count']!)!,
         total: int.parse(state.uri.queryParameters['total']!)!,
       );
 
   String get location => GoRouteData.$location(
-        '/test-result',
+        '/flashcard-result',
         queryParams: {
           'correct-count': correctCount.toString(),
           'total': total.toString(),

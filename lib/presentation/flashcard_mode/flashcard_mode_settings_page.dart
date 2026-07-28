@@ -4,8 +4,8 @@ import 'package:word_stock/core/di/auth_providers.dart';
 import 'package:word_stock/core/router/router.dart';
 import 'package:word_stock/presentation/word/word_list_view_model.dart';
 
-class TestSettingsPage extends ConsumerStatefulWidget {
-  const TestSettingsPage({
+class FlashcardModeSettingsPage extends ConsumerStatefulWidget {
+  const FlashcardModeSettingsPage({
     super.key,
     required this.folderId,
     required this.folderName,
@@ -15,10 +15,10 @@ class TestSettingsPage extends ConsumerStatefulWidget {
   final String folderName;
 
   @override
-  ConsumerState<TestSettingsPage> createState() => _TestSettingsPageState();
+  ConsumerState<FlashcardModeSettingsPage> createState() => _FlashcardModeSettingsPageState();
 }
 
-class _TestSettingsPageState extends ConsumerState<TestSettingsPage> {
+class _FlashcardModeSettingsPageState extends ConsumerState<FlashcardModeSettingsPage> {
   bool _shuffle = true;
 
   @override
@@ -55,9 +55,9 @@ class _TestSettingsPageState extends ConsumerState<TestSettingsPage> {
               onPressed: wordsState.valueOrNull?.isEmpty ?? true
                   ? null
                   : () {
-                      TestRoute(
+                      FlashcardModeRoute(
                         folderId: widget.folderId,
-                        $extra: TestRouteExtra(
+                        $extra: FlashcardModeRouteExtra(
                           words: wordsState.valueOrNull!,
                           shuffle: _shuffle,
                           folderName: widget.folderName,

@@ -12,11 +12,12 @@ class FirestorePath {
   static String word(String userId, String folderId, String wordId) =>
       'users/$userId/folders/$folderId/words/$wordId';
 
-  // --- test_results ---
-  static String testResults(String userId) => 'users/$userId/test_results';
+  // --- flashcard_results ---
+  static String flashcardResults(String userId) =>
+      'users/$userId/flashcard_results';
 
-  static String testResult(String userId, String testResultId) =>
-      'users/$userId/test_results/$testResultId';
+  static String flashcardResult(String userId, String flashcardResultId) =>
+      'users/$userId/flashcard_results/$flashcardResultId';
 
   // --- settings ---
   static String settings(String userId) => 'users/$userId/settings/config';

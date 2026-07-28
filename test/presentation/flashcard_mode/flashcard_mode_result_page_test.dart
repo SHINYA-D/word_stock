@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:word_stock/presentation/test_session/test_result_page.dart';
+import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_result_page.dart';
 
-// TestResultPage はコンストラクタ引数のみで完結する純粋な StatelessWidget
+// FlashcardModeResultPage はコンストラクタ引数のみで完結する純粋な StatelessWidget
 // Provider / Firebase 依存なし
 
 Widget buildResultPage(int correct, int total) {
   return MaterialApp(
-    home: TestResultPage(correctCount: correct, total: total),
+    home: FlashcardModeResultPage(correctCount: correct, total: total),
   );
 }
 
 void main() {
-  group('TestResultPage', () {
+  group('FlashcardModeResultPage', () {
     testWidgets('正解率パーセンテージが表示される', (tester) async {
       await tester.pumpWidget(buildResultPage(8, 10));
 

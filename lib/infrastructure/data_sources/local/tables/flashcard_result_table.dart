@@ -1,7 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
-class TestResultTable {
-  static const String tableName = 'test_results';
+class FlashcardResultTable {
+  static const String tableName = 'flashcard_results';
 
   static Future<void> onCreate(DatabaseExecutor db) async {
     await db.execute('''

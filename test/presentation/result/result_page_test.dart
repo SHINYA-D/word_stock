@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:word_stock/domain/entities/test_result.dart';
+import 'package:word_stock/domain/entities/flashcard_result.dart';
 import 'package:word_stock/presentation/result/result_page.dart';
 import 'package:word_stock/presentation/result/result_view_model.dart';
 
@@ -67,19 +67,19 @@ void main() {
 
 class LoadingResultViewModel extends ResultViewModel {
   @override
-  Future<List<TestResult>> build() =>
-      Completer<List<TestResult>>().future;
+  Future<List<FlashcardResult>> build() =>
+      Completer<List<FlashcardResult>>().future;
 }
 
 class EmptyResultViewModel extends ResultViewModel {
   @override
-  Future<List<TestResult>> build() async => [];
+  Future<List<FlashcardResult>> build() async => [];
 }
 
 class DataResultViewModel extends ResultViewModel {
   @override
-  Future<List<TestResult>> build() async => [
-        TestResult(
+  Future<List<FlashcardResult>> build() async => [
+        FlashcardResult(
           id: 'r1',
           folderId: 'folder-1',
           totalCount: 3,
@@ -87,7 +87,7 @@ class DataResultViewModel extends ResultViewModel {
           date: DateTime(2024, 1, 1),
           updatedAt: DateTime(2024, 1, 1),
         ),
-        TestResult(
+        FlashcardResult(
           id: 'r2',
           folderId: 'folder-2',
           totalCount: 2,

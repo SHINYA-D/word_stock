@@ -1,18 +1,18 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:word_stock/core/error/failure.dart';
-import 'package:word_stock/domain/entities/test_result.dart';
-import 'package:word_stock/domain/repositories/test_result_repository.dart';
+import 'package:word_stock/domain/entities/flashcard_result.dart';
+import 'package:word_stock/domain/repositories/flashcard_result_repository.dart';
 
 /// 開発用インメモリ成績リポジトリ。
-class MockTestResultRepository implements TestResultRepository {
-  final _store = <String, List<TestResult>>{};
+class MockFlashcardResultRepository implements FlashcardResultRepository {
+  final _store = <String, List<FlashcardResult>>{};
   int _idCounter = 1;
 
-  MockTestResultRepository() {
+  MockFlashcardResultRepository() {
     // サンプルデータ
     const userId = 'mock-user-id';
     _store[userId] = [
-      TestResult(
+      FlashcardResult(
         id: 'result-1',
         folderId: 'folder-1',
         totalCount: 3,
@@ -20,7 +20,7 @@ class MockTestResultRepository implements TestResultRepository {
         date: DateTime.now().subtract(const Duration(days: 1)),
         updatedAt: DateTime.now().subtract(const Duration(days: 1)),
       ),
-      TestResult(
+      FlashcardResult(
         id: 'result-2',
         folderId: 'folder-2',
         totalCount: 2,
@@ -32,7 +32,7 @@ class MockTestResultRepository implements TestResultRepository {
   }
 
   @override
-  Future<Either<Failure, List<TestResult>>> getTestResults({
+  Future<Either<Failure, List<FlashcardResult>>> getFlashcardResults({
     required String userId,
     String? folderId,
   }) async {
@@ -48,7 +48,7 @@ class MockTestResultRepository implements TestResultRepository {
   }
 
   @override
-  Future<Either<Failure, TestResult>> saveTestResult({
+  Future<Either<Failure, FlashcardResult>> saveFlashcardResult({
     required String userId,
     required String folderId,
     required int totalCount,
@@ -56,7 +56,7 @@ class MockTestResultRepository implements TestResultRepository {
   }) async {
     await Future.delayed(const Duration(milliseconds: 200));
     final now = DateTime.now();
-    final result = TestResult(
+    final result = FlashcardResult(
       id: 'result-${_idCounter++}',
       folderId: folderId,
       totalCount: totalCount,

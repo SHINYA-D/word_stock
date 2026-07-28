@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:word_stock/domain/entities/word.dart';
-import 'package:word_stock/presentation/test_session/test_settings_page.dart';
+import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_settings_page.dart';
 import 'package:word_stock/presentation/word/word_list_view_model.dart';
 
 import '../../helpers/test_helpers.dart';
@@ -10,18 +10,18 @@ import '../../helpers/test_helpers.dart';
 const _folderId = 'folder-1';
 const _folderName = '英単語';
 
-Widget buildTestSettingsPage({List<Override> extra = const []}) {
+Widget buildFlashcardModeSettingsPage({List<Override> extra = const []}) {
   return buildWithMockRepositories(
-    child: const TestSettingsPage(folderId: _folderId, folderName: _folderName),
+    child: const FlashcardModeSettingsPage(folderId: _folderId, folderName: _folderName),
     extra: extra,
   );
 }
 
 void main() {
-  group('TestSettingsPage', () {
+  group('FlashcardModeSettingsPage', () {
     testWidgets('フォルダ名が表示される', (tester) async {
       await tester.pumpWidget(
-        buildTestSettingsPage(extra: [
+        buildFlashcardModeSettingsPage(extra: [
           wordListViewModelProvider(_folderId)
               .overrideWith(DataTestSettingsWordListVM.new),
         ]),
@@ -33,7 +33,7 @@ void main() {
 
     testWidgets('単語数が表示される', (tester) async {
       await tester.pumpWidget(
-        buildTestSettingsPage(extra: [
+        buildFlashcardModeSettingsPage(extra: [
           wordListViewModelProvider(_folderId)
               .overrideWith(DataTestSettingsWordListVM.new),
         ]),
@@ -45,7 +45,7 @@ void main() {
 
     testWidgets('シャッフル切り替えスイッチが表示されデフォルトで ON になっている', (tester) async {
       await tester.pumpWidget(
-        buildTestSettingsPage(extra: [
+        buildFlashcardModeSettingsPage(extra: [
           wordListViewModelProvider(_folderId)
               .overrideWith(DataTestSettingsWordListVM.new),
         ]),
@@ -61,7 +61,7 @@ void main() {
 
     testWidgets('単語が 0 件のとき「テスト開始」ボタンが無効化される', (tester) async {
       await tester.pumpWidget(
-        buildTestSettingsPage(extra: [
+        buildFlashcardModeSettingsPage(extra: [
           wordListViewModelProvider(_folderId)
               .overrideWith(EmptyTestSettingsWordListVM.new),
         ]),
@@ -74,7 +74,7 @@ void main() {
 
     testWidgets('単語が存在するとき「テスト開始」ボタンが有効化される', (tester) async {
       await tester.pumpWidget(
-        buildTestSettingsPage(extra: [
+        buildFlashcardModeSettingsPage(extra: [
           wordListViewModelProvider(_folderId)
               .overrideWith(DataTestSettingsWordListVM.new),
         ]),

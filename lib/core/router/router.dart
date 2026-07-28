@@ -13,9 +13,9 @@ import 'package:word_stock/presentation/home/home_page.dart';
 import 'package:word_stock/presentation/result/result_page.dart';
 import 'package:word_stock/presentation/settings/settings_page.dart';
 import 'package:word_stock/presentation/shell/shell_page.dart';
-import 'package:word_stock/presentation/test_session/test_page.dart';
-import 'package:word_stock/presentation/test_session/test_result_page.dart';
-import 'package:word_stock/presentation/test_session/test_settings_page.dart';
+import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_page.dart';
+import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_result_page.dart';
+import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_settings_page.dart';
 import 'package:word_stock/presentation/word/word_list_page.dart';
 
 part 'router.g.dart';
@@ -51,8 +51,8 @@ GoRouter router(Ref ref) {
   return goRouter;
 }
 
-class TestRouteExtra {
-  const TestRouteExtra({
+class FlashcardModeRouteExtra {
+  const FlashcardModeRouteExtra({
     required this.words,
     required this.shuffle,
     required this.folderName,
@@ -106,30 +106,30 @@ class PasswordResetRoute extends GoRouteData {
 // ─── テスト関連（BottomNav なし）───────────────────────────────────
 
 @immutable
-@TypedGoRoute<TestSettingsRoute>(path: '/test-settings/:folderId')
-class TestSettingsRoute extends GoRouteData {
-  const TestSettingsRoute({required this.folderId, this.$extra});
+@TypedGoRoute<FlashcardModeSettingsRoute>(path: '/test-settings/:folderId')
+class FlashcardModeSettingsRoute extends GoRouteData {
+  const FlashcardModeSettingsRoute({required this.folderId, this.$extra});
 
   final String folderId;
   final String? $extra;
 
   @override
   Widget build(BuildContext context, GoRouterState state) {
-    return TestSettingsPage(folderId: folderId, folderName: $extra ?? '');
+    return FlashcardModeSettingsPage(folderId: folderId, folderName: $extra ?? '');
   }
 }
 
 @immutable
-@TypedGoRoute<TestRoute>(path: '/test/:folderId')
-class TestRoute extends GoRouteData {
-  const TestRoute({required this.folderId, required this.$extra});
+@TypedGoRoute<FlashcardModeRoute>(path: '/test/:folderId')
+class FlashcardModeRoute extends GoRouteData {
+  const FlashcardModeRoute({required this.folderId, required this.$extra});
 
   final String folderId;
-  final TestRouteExtra $extra;
+  final FlashcardModeRouteExtra $extra;
 
   @override
   Widget build(BuildContext context, GoRouterState state) {
-    return TestPage(
+    return FlashcardModePage(
       folderId: folderId,
       words: $extra.words,
       shuffle: $extra.shuffle,
@@ -140,16 +140,16 @@ class TestRoute extends GoRouteData {
 }
 
 @immutable
-@TypedGoRoute<TestResultRoute>(path: '/test-result')
-class TestResultRoute extends GoRouteData {
-  const TestResultRoute({required this.correctCount, required this.total});
+@TypedGoRoute<FlashcardModeResultRoute>(path: '/flashcard-result')
+class FlashcardModeResultRoute extends GoRouteData {
+  const FlashcardModeResultRoute({required this.correctCount, required this.total});
 
   final int correctCount;
   final int total;
 
   @override
   Widget build(BuildContext context, GoRouterState state) {
-    return TestResultPage(correctCount: correctCount, total: total);
+    return FlashcardModeResultPage(correctCount: correctCount, total: total);
   }
 }
 

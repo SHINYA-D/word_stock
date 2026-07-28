@@ -8,7 +8,7 @@ import 'package:word_stock/domain/entities/word.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_auth_repository.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_folder_repository.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_settings_repository.dart';
-import 'package:word_stock/infrastructure/repositories/mock/mock_test_result_repository.dart';
+import 'package:word_stock/infrastructure/repositories/mock/mock_flashcard_result_repository.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_word_repository.dart';
 
 /// テスト用モックユーザー（MockFolderRepository / MockWordRepository のサンプルデータと同じ ID）
@@ -39,7 +39,7 @@ Widget buildWithMockRepositories({
       folderRepositoryProvider.overrideWithValue(MockFolderRepository()),
       wordRepositoryProvider.overrideWithValue(MockWordRepository()),
       settingsRepositoryProvider.overrideWithValue(MockSettingsRepository()),
-      testResultRepositoryProvider.overrideWithValue(MockTestResultRepository()),
+      flashcardResultRepositoryProvider.overrideWithValue(MockFlashcardResultRepository()),
       currentUserProvider.overrideWithValue(testUser),
       ...extra,
     ],

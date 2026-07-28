@@ -13,11 +13,7 @@ SyncService syncService(Ref ref) {
   return SyncService(
     syncQueueDataSource: ref.watch(syncQueueDataSourceProvider),
     firestore: ref.watch(firestoreProvider),
-    getCurrentUserId: () {
-      final user = ref.read(currentUserProvider);
-      if (user == null) throw StateError('User not logged in');
-      return user.id;
-    },
+    getCurrentUserId: () => ref.read(currentUserProvider)?.id,
     dbHelper: ref.watch(databaseHelperProvider),
   );
 }

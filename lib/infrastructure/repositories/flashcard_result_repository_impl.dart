@@ -2,18 +2,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:uuid/uuid.dart';
 import 'package:word_stock/core/error/failure.dart';
-import 'package:word_stock/domain/entities/test_result.dart';
-import 'package:word_stock/domain/repositories/test_result_repository.dart';
+import 'package:word_stock/domain/entities/flashcard_result.dart';
+import 'package:word_stock/domain/repositories/flashcard_result_repository.dart';
 import 'package:word_stock/infrastructure/data_sources/firestore_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
 import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/test_result_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/test_result_local_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/flashcard_result_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/flashcard_result_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/network/connectivity_monitor.dart';
 
-class TestResultRepositoryImpl implements TestResultRepository {
-  TestResultRepositoryImpl({
-    required TestResultLocalDataSource localDataSource,
+class FlashcardResultRepositoryImpl implements FlashcardResultRepository {
+  FlashcardResultRepositoryImpl({
+    required FlashcardResultLocalDataSource localDataSource,
     required FirestoreDataSource remoteDataSource,
     required SyncQueueDataSource syncQueueDataSource,
     required DatabaseHelper dbHelper,
@@ -24,7 +24,7 @@ class TestResultRepositoryImpl implements TestResultRepository {
         _dbHelper = dbHelper,
         _connectivity = connectivityMonitor;
 
-  final TestResultLocalDataSource _local;
+  final FlashcardResultLocalDataSource _local;
   final FirestoreDataSource _remote;
   final SyncQueueDataSource _syncQueue;
   final DatabaseHelper _dbHelper;
@@ -33,7 +33,7 @@ class TestResultRepositoryImpl implements TestResultRepository {
   static const _uuid = Uuid();
 
   @override
-  Future<Either<Failure, List<TestResult>>> getTestResults({
+  Future<Either<Failure, List<FlashcardResult>>> getFlashcardResults({
     required String userId,
     String? folderId,
   }) async {
@@ -46,7 +46,7 @@ class TestResultRepositoryImpl implements TestResultRepository {
   }
 
   @override
-  Future<Either<Failure, TestResult>> saveTestResult({
+  Future<Either<Failure, FlashcardResult>> saveFlashcardResult({
     required String userId,
     required String folderId,
     required int totalCount,
@@ -54,7 +54,7 @@ class TestResultRepositoryImpl implements TestResultRepository {
   }) async {
     try {
       final now = DateTime.now();
-      final result = TestResult(
+      final result = FlashcardResult(
         id: _uuid.v4(),
         folderId: folderId,
         totalCount: totalCount,
@@ -66,12 +66,12 @@ class TestResultRepositoryImpl implements TestResultRepository {
 
       if (isOnline) {
         await _local.insert(result, userId: userId, syncStatus: 'synced');
-        await _remote.writeTestResult(result, userId);
+        await _remote.writeFlashcardResult(result, userId);
       } else {
         final db = await _dbHelper.database;
         await db.transaction((txn) async {
           await txn.insert(
-            TestResultTable.tableName,
+            FlashcardResultTable.tableName,
             {
               'id': result.id,
               'folderId': result.folderId,
@@ -86,7 +86,7 @@ class TestResultRepositoryImpl implements TestResultRepository {
           await _syncQueue.enqueueInTransaction(
             txn,
             operation: 'create',
-            tableName: TestResultTable.tableName,
+            tableName: FlashcardResultTable.tableName,
             recordId: result.id,
             payload: {
               'folderId': result.folderId,

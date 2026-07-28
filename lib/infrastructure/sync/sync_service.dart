@@ -8,7 +8,7 @@ import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_sou
 import 'package:word_stock/infrastructure/data_sources/local/tables/folder_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/settings_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/sync_meta_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/test_result_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/flashcard_result_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/word_table.dart';
 import 'package:word_stock/infrastructure/data_sources/network/connectivity_monitor.dart';
 
@@ -16,7 +16,7 @@ class SyncService {
   SyncService({
     required SyncQueueDataSource syncQueueDataSource,
     required FirebaseFirestore firestore,
-    required String Function() getCurrentUserId,
+    required String? Function() getCurrentUserId,
     required DatabaseHelper dbHelper,
   })  : _syncQueueDataSource = syncQueueDataSource,
         _firestore = firestore,
@@ -25,7 +25,7 @@ class SyncService {
 
   final SyncQueueDataSource _syncQueueDataSource;
   final FirebaseFirestore _firestore;
-  final String Function() _getCurrentUserId;
+  final String? Function() _getCurrentUserId;
   final DatabaseHelper _dbHelper;
 
   static const Duration _syncInterval = Duration(minutes: 5);
@@ -42,6 +42,7 @@ class SyncService {
     if (!await connectivityMonitor.isOnline()) return;
 
     final userId = _getCurrentUserId();
+    if (userId == null) return;
     final queueItems = await _syncQueueDataSource.getAll();
 
     for (final item in queueItems) {
@@ -136,8 +137,8 @@ class SyncService {
           throw Exception('parentId is required for words');
         }
         return FirestorePath.word(userId, parentId, recordId);
-      case TestResultTable.tableName:
-        return FirestorePath.testResult(userId, recordId);
+      case FlashcardResultTable.tableName:
+        return FirestorePath.flashcardResult(userId, recordId);
       case SettingsTable.tableName:
         return FirestorePath.settings(userId);
       default:
@@ -151,6 +152,7 @@ class SyncService {
 
   Future<void> syncRemoteToLocalOnLogin() async {
     final userId = _getCurrentUserId();
+    if (userId == null) return;
     final db = await _dbHelper.database;
 
     // folders
@@ -178,14 +180,14 @@ class SyncService {
       });
     }
 
-    // test_results
+    // flashcard_results
     final resultsSnapshot = await _firestore
-        .collection(FirestorePath.testResults(userId))
+        .collection(FirestorePath.flashcardResults(userId))
         .get();
 
     await db.transaction((txn) async {
       for (final doc in resultsSnapshot.docs) {
-        await _upsertTestResultWithConflictCheck(txn, doc, userId);
+        await _upsertFlashcardResultWithConflictCheck(txn, doc, userId);
       }
     });
 
@@ -217,6 +219,7 @@ class SyncService {
     }
 
     final userId = _getCurrentUserId();
+    if (userId == null) return;
     final lastSyncedAtForQuery = lastSyncedAt ?? DateTime(1970);
     final db = await _dbHelper.database;
 
@@ -253,15 +256,15 @@ class SyncService {
       });
     }
 
-    // test_results 差分
+    // flashcard_results 差分
     final resultsSnapshot = await _firestore
-        .collection(FirestorePath.testResults(userId))
+        .collection(FirestorePath.flashcardResults(userId))
         .where('updatedAt', isGreaterThan: lastSyncedAtForQuery)
         .get();
 
     await db.transaction((txn) async {
       for (final doc in resultsSnapshot.docs) {
-        await _upsertTestResultWithConflictCheck(txn, doc, userId);
+        await _upsertFlashcardResultWithConflictCheck(txn, doc, userId);
       }
     });
 
@@ -364,7 +367,7 @@ class SyncService {
     );
   }
 
-  Future<void> _upsertTestResultWithConflictCheck(
+  Future<void> _upsertFlashcardResultWithConflictCheck(
     Transaction txn,
     DocumentSnapshot doc,
     String userId,
@@ -373,7 +376,7 @@ class SyncService {
     final remoteUpdatedAt = (data['updatedAt'] as Timestamp).toDate();
 
     final localRows = await txn.query(
-      TestResultTable.tableName,
+      FlashcardResultTable.tableName,
       where: 'id = ?',
       whereArgs: [doc.id],
     );
@@ -387,7 +390,7 @@ class SyncService {
     }
 
     await txn.insert(
-      TestResultTable.tableName,
+      FlashcardResultTable.tableName,
       {
         'id': doc.id,
         'folderId': data['folderId'] as String,

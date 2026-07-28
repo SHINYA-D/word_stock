@@ -7,9 +7,9 @@ import 'presentation/auth/splash_page_test.dart' as splash_page;
 import 'presentation/home/home_page_test.dart' as home_page;
 import 'presentation/result/result_page_test.dart' as result_page;
 import 'presentation/settings/settings_page_test.dart' as settings_page;
-import 'presentation/test_session/test_page_test.dart' as test_page;
-import 'presentation/test_session/test_result_page_test.dart' as test_result_page;
-import 'presentation/test_session/test_settings_page_test.dart' as test_settings_page;
+import 'presentation/flashcard_mode/flashcard_mode_page_test.dart' as test_page;
+import 'presentation/flashcard_mode/flashcard_mode_result_page_test.dart' as flashcard_result_page;
+import 'presentation/flashcard_mode/flashcard_mode_settings_page_test.dart' as test_settings_page;
 import 'presentation/word/word_list_page_test.dart' as word_list_page;
 
 void main() {
@@ -28,10 +28,10 @@ void main() {
     word_list_page.main();
   }); 
 
-  group('TestSession', () {
+  group('FlashcardMode', () {
     test_settings_page.main();
     test_page.main();
-    test_result_page.main();
+    flashcard_result_page.main();
   });
 
   group('Result', () {

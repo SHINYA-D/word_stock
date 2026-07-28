@@ -5,17 +5,17 @@ import 'package:word_stock/core/di/local_data_source_providers.dart';
 import 'package:word_stock/domain/repositories/auth_repository.dart';
 import 'package:word_stock/domain/repositories/folder_repository.dart';
 import 'package:word_stock/domain/repositories/settings_repository.dart';
-import 'package:word_stock/domain/repositories/test_result_repository.dart';
+import 'package:word_stock/domain/repositories/flashcard_result_repository.dart';
 import 'package:word_stock/domain/repositories/word_repository.dart';
 import 'package:word_stock/infrastructure/repositories/auth_repository_impl.dart';
 import 'package:word_stock/infrastructure/repositories/folder_repository_impl.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_auth_repository.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_folder_repository.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_settings_repository.dart';
-import 'package:word_stock/infrastructure/repositories/mock/mock_test_result_repository.dart';
+import 'package:word_stock/infrastructure/repositories/mock/mock_flashcard_result_repository.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_word_repository.dart';
 import 'package:word_stock/infrastructure/repositories/settings_repository_impl.dart';
-import 'package:word_stock/infrastructure/repositories/test_result_repository_impl.dart';
+import 'package:word_stock/infrastructure/repositories/flashcard_result_repository_impl.dart';
 import 'package:word_stock/infrastructure/repositories/word_repository_impl.dart';
 
 part 'repository_providers.g.dart';
@@ -37,7 +37,7 @@ FolderRepository folderRepository(Ref ref) {
   return FolderRepositoryImpl(
     localDataSource: ref.watch(folderLocalDataSourceProvider),
     wordLocalDataSource: ref.watch(wordLocalDataSourceProvider),
-    testResultLocalDataSource: ref.watch(testResultLocalDataSourceProvider),
+    flashcardResultLocalDataSource: ref.watch(flashcardResultLocalDataSourceProvider),
     remoteDataSource: ref.watch(firestoreDataSourceProvider),
     syncQueueDataSource: ref.watch(syncQueueDataSourceProvider),
     dbHelper: ref.watch(databaseHelperProvider),
@@ -58,10 +58,10 @@ WordRepository wordRepository(Ref ref) {
 }
 
 @Riverpod(keepAlive: true)
-TestResultRepository testResultRepository(Ref ref) {
-  if (kUseMocks) return MockTestResultRepository();
-  return TestResultRepositoryImpl(
-    localDataSource: ref.watch(testResultLocalDataSourceProvider),
+FlashcardResultRepository flashcardResultRepository(Ref ref) {
+  if (kUseMocks) return MockFlashcardResultRepository();
+  return FlashcardResultRepositoryImpl(
+    localDataSource: ref.watch(flashcardResultLocalDataSourceProvider),
     remoteDataSource: ref.watch(firestoreDataSourceProvider),
     syncQueueDataSource: ref.watch(syncQueueDataSourceProvider),
     dbHelper: ref.watch(databaseHelperProvider),

@@ -45,7 +45,7 @@ lib/
 │       ├── auth/
 │       ├── folder/
 │       ├── settings/
-│       ├── test_result/
+│       ├── flashcard_result/
 │       └── word/
 ├── core/
 │   ├── di/              # Riverpod Provider（riverpod_generator使用）
@@ -64,7 +64,7 @@ lib/
 │       ├── auth_repository_impl.dart
 │       ├── folder_repository_impl.dart
 │       ├── settings_repository_impl.dart
-│       ├── test_result_repository_impl.dart
+│       ├── flashcard_result_repository_impl.dart
 │       ├── word_repository_impl.dart
 │       └── mock/
 └── presentation/
@@ -84,13 +84,13 @@ lib/
     │   │   ├── tables/                        # 新規フォルダ
     │   │   │   ├── folder_table.dart
     │   │   │   ├── word_table.dart
-    │   │   │   ├── test_result_table.dart
+    │   │   │   ├── flashcard_result_table.dart
     │   │   │   ├── settings_table.dart
     │   │   │   ├── sync_queue_table.dart
     │   │   │   └── sync_meta_table.dart
     │   │   ├── folder_local_data_source.dart
     │   │   ├── word_local_data_source.dart
-    │   │   ├── test_result_local_data_source.dart
+    │   │   ├── flashcard_result_local_data_source.dart
     │   │   ├── settings_local_data_source.dart
     │   │   └── sync_queue_data_source.dart
     │   └── network/                           # 新規フォルダ
@@ -133,7 +133,7 @@ UI側はオン/オフラインを意識しない設計にする。
 ```
 users/{userId}/folders/{folderId}
 users/{userId}/folders/{folderId}/words/{wordId}
-users/{userId}/test_results/{testResultId}
+users/{userId}/flashcard_results/{flashcardResultId}
 users/{userId}/settings
 ```
 
@@ -292,7 +292,7 @@ Firestoreトランザクションは、読み取ったドキュメントが他�
 **対象ファイル**
 - `lib/domain/entities/word.dart`
 - `lib/domain/entities/folder.dart`
-- `lib/domain/entities/test_result.dart`
+- `lib/domain/entities/flashcard_result.dart`
 - `lib/domain/entities/user_settings.dart`
 
 **実装内容**
@@ -315,7 +315,7 @@ abstract class Word with _$Word {
 **各モデルへの追加方針**
 - Word：`updatedAt`を追加
 - Folder：`updatedAt`を追加
-- TestResult：`updatedAt`を追加
+- FlashcardResult：`updatedAt`を追加
 - UserSettings：`updatedAt`を追加
 
 Freezedの再生成を忘れずに行う。
@@ -346,12 +346,12 @@ class FirestorePath {
   static String word(String userId, String folderId, String wordId) =>
       'users/$userId/folders/$folderId/words/$wordId';
 
-  // --- test_results ---
-  static String testResults(String userId) =>
-      'users/$userId/test_results';
+  // --- flashcard_results ---
+  static String flashcardResults(String userId) =>
+      'users/$userId/flashcard_results';
 
-  static String testResult(String userId, String testResultId) =>
-      'users/$userId/test_results/$testResultId';
+  static String flashcardResult(String userId, String flashcardResultId) =>
+      'users/$userId/flashcard_results/$flashcardResultId';
 
   // --- settings ---
   static String settings(String userId) =>
@@ -393,7 +393,7 @@ dependencies:
 **対象ファイル**
 - `lib/infrastructure/data_sources/local/tables/folder_table.dart`
 - `lib/infrastructure/data_sources/local/tables/word_table.dart`
-- `lib/infrastructure/data_sources/local/tables/test_result_table.dart`
+- `lib/infrastructure/data_sources/local/tables/flashcard_result_table.dart`
 - `lib/infrastructure/data_sources/local/tables/settings_table.dart`
 - `lib/infrastructure/data_sources/local/tables/sync_queue_table.dart`
 - `lib/infrastructure/data_sources/local/tables/sync_meta_table.dart`
@@ -452,11 +452,11 @@ class WordTable {
 }
 ```
 
-**test_result_table.dart**
+**flashcard_result_table.dart**
 
 ```dart
-class TestResultTable {
-  static const String tableName = 'test_results';
+class FlashcardResultTable {
+  static const String tableName = 'flashcard_results';
 
   static Future<void> onCreate(Database db) async {
     await db.execute('''
@@ -548,7 +548,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'tables/folder_table.dart';
 import 'tables/word_table.dart';
-import 'tables/test_result_table.dart';
+import 'tables/flashcard_result_table.dart';
 import 'tables/settings_table.dart';
 import 'tables/sync_queue_table.dart';
 import 'tables/sync_meta_table.dart';
@@ -585,7 +585,7 @@ class DatabaseHelper {
     await db.transaction((txn) async {
       await FolderTable.onCreate(txn);
       await WordTable.onCreate(txn);
-      await TestResultTable.onCreate(txn);
+      await FlashcardResultTable.onCreate(txn);
       await SettingsTable.onCreate(txn);
       await SyncQueueTable.onCreate(txn);
       await SyncMetaTable.onCreate(txn);
@@ -614,7 +614,7 @@ class DatabaseHelper {
 **対象ファイル**
 - `lib/infrastructure/data_sources/local/folder_local_data_source.dart`
 - `lib/infrastructure/data_sources/local/word_local_data_source.dart`
-- `lib/infrastructure/data_sources/local/test_result_local_data_source.dart`
+- `lib/infrastructure/data_sources/local/flashcard_result_local_data_source.dart`
 - `lib/infrastructure/data_sources/local/settings_local_data_source.dart`
 
 **実装内容**
@@ -743,7 +743,7 @@ class WordLocalDataSource {
 }
 ```
 
-他のLocalDataSource（folder / test_result / settings）も同様のパターンで実装する。
+他のLocalDataSource（folder / flashcard_result / settings）も同様のパターンで実装する。
 
 ### タスク3-2：SyncQueueDataSourceを作成
 
@@ -864,7 +864,7 @@ class ConnectivityMonitor {
 **対象ファイル**
 - `lib/infrastructure/repositories/folder_repository_impl.dart`
 - `lib/infrastructure/repositories/word_repository_impl.dart`
-- `lib/infrastructure/repositories/test_result_repository_impl.dart`
+- `lib/infrastructure/repositories/flashcard_result_repository_impl.dart`
 - `lib/infrastructure/repositories/settings_repository_impl.dart`
 
 **実装内容**
@@ -1096,8 +1096,8 @@ class SyncService {
           throw Exception('parentId is required for words');
         }
         return FirestorePath.word(userId, parentId, recordId);
-      case 'test_results':
-        return FirestorePath.testResult(userId, recordId);
+      case 'flashcard_results':
+        return FirestorePath.flashcardResult(userId, recordId);
       case 'settings':
         return FirestorePath.settings(userId);
       default:
@@ -1209,7 +1209,7 @@ Providerから取得して起動する。
 Future<void> syncRemoteToLocalOnLogin({
   required FolderLocalDataSource folderLocalDataSource,
   required WordLocalDataSource wordLocalDataSource,
-  required TestResultLocalDataSource testResultLocalDataSource,
+  required FlashcardResultLocalDataSource flashcardResultLocalDataSource,
   required SettingsLocalDataSource settingsLocalDataSource,
   required DatabaseHelper dbHelper,
 }) async {
@@ -1242,7 +1242,7 @@ Future<void> syncRemoteToLocalOnLogin({
     });
   }
 
-  // test_results、settings も同様のパターンで実装
+  // flashcard_results、settings も同様のパターンで実装
   // （各エンティティ用のUPSERTメソッドを用意する）
 
   // lastSyncedAt を更新
@@ -1347,7 +1347,7 @@ Future<void> _upsertWordWithConflictCheck(
   );
 }
 
-// test_results、settings用のUPSERTメソッドも同様のパターンで実装する
+// flashcard_results、settings用のUPSERTメソッドも同様のパターンで実装する
 
 Future<void> _updateLastSyncedAt(DatabaseHelper dbHelper) async {
   final db = await dbHelper.database;
@@ -1460,7 +1460,7 @@ Future<void> syncRemoteToLocalOnResumed({
     });
   }
 
-  // test_results、settings も同様に差分取得してUPSERT
+  // flashcard_results、settings も同様に差分取得してUPSERT
 
   // lastSyncedAt を更新
   await _updateLastSyncedAt(dbHelper);

@@ -15,7 +15,7 @@
 
 - **SQLite**: `sqflite_common_ffi` を dev_dependency として追加し、実際の SQLite エンジンを
   インメモリではなくテスト専用の一時ディレクトリ上のファイルとして使用する
-  (`FolderLocalDataSource` / `WordLocalDataSource` / `TestResultLocalDataSource` /
+  (`FolderLocalDataSource` / `WordLocalDataSource` / `FlashcardResultLocalDataSource` /
   `SyncQueueDataSource` / `DatabaseHelper` は実クラスをそのまま使用)。
 - **Firestore**: `FirestoreDataSource` を `implements` した手書きフェイク
   `test/helpers/fake_infrastructure.dart` の `FakeFirestoreDataSource` を使用し、
@@ -56,7 +56,7 @@
 - **カテゴリ**: 正常系
 - **対象メソッド**: deleteFolder()
 - **入力条件**: フォルダ`root`配下に成績データ1件が存在。オンライン状態。
-- **期待値**: ローカルDBから成績データが削除され、`deletedTestResults`に記録される。
+- **期待値**: ローカルDBから成績データが削除され、`deletedFlashcardResults`に記録される。
 
 ### テストケース4: サブフォルダが存在する場合、サブフォルダも再帰的に削除される
 - **カテゴリ**: 正常系
