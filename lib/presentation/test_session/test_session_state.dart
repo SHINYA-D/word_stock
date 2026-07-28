@@ -1,5 +1,5 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:word_stock_2026/domain/entities/word.dart';
+import 'package:word_stock/domain/entities/word.dart';
 
 part 'test_session_state.freezed.dart';
 

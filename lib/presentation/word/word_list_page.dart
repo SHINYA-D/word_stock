@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:word_stock_2026/core/router/router.dart';
-import 'package:word_stock_2026/core/widgets/error_screen.dart';
-import 'package:word_stock_2026/domain/entities/word.dart';
-import 'package:word_stock_2026/presentation/word/word_list_view_model.dart';
+import 'package:word_stock/core/router/router.dart';
+import 'package:word_stock/core/widgets/error_screen.dart';
+import 'package:word_stock/domain/entities/word.dart';
+import 'package:word_stock/presentation/word/word_list_view_model.dart';
 
 class WordListPage extends ConsumerStatefulWidget {
   const WordListPage({

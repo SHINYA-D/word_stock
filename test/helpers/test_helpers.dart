@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:word_stock_2026/core/di/auth_providers.dart';
-import 'package:word_stock_2026/core/di/repository_providers.dart';
-import 'package:word_stock_2026/domain/entities/app_user.dart';
-import 'package:word_stock_2026/domain/entities/folder.dart';
-import 'package:word_stock_2026/domain/entities/word.dart';
-import 'package:word_stock_2026/infrastructure/repositories/mock/mock_auth_repository.dart';
-import 'package:word_stock_2026/infrastructure/repositories/mock/mock_folder_repository.dart';
-import 'package:word_stock_2026/infrastructure/repositories/mock/mock_settings_repository.dart';
-import 'package:word_stock_2026/infrastructure/repositories/mock/mock_test_result_repository.dart';
-import 'package:word_stock_2026/infrastructure/repositories/mock/mock_word_repository.dart';
+import 'package:word_stock/core/di/auth_providers.dart';
+import 'package:word_stock/core/di/repository_providers.dart';
+import 'package:word_stock/domain/entities/app_user.dart';
+import 'package:word_stock/domain/entities/folder.dart';
+import 'package:word_stock/domain/entities/word.dart';
+import 'package:word_stock/infrastructure/repositories/mock/mock_auth_repository.dart';
+import 'package:word_stock/infrastructure/repositories/mock/mock_folder_repository.dart';
+import 'package:word_stock/infrastructure/repositories/mock/mock_settings_repository.dart';
+import 'package:word_stock/infrastructure/repositories/mock/mock_test_result_repository.dart';
+import 'package:word_stock/infrastructure/repositories/mock/mock_word_repository.dart';
 
 /// テスト用モックユーザー（MockFolderRepository / MockWordRepository のサンプルデータと同じ ID）
 const testUser = AppUser(id: 'mock-user-id', email: 'dev@example.com');

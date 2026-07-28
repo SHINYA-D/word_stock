@@ -1,5 +1,5 @@
 import 'package:sqflite/sqflite.dart';
-import 'package:word_stock_2026/domain/entities/test_result.dart';
+import 'package:word_stock/domain/entities/test_result.dart';
 import 'database_helper.dart';
 import 'tables/test_result_table.dart';
 

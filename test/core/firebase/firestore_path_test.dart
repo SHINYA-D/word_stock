@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:word_stock_2026/core/firebase/firestore_path.dart';
+import 'package:word_stock/core/firebase/firestore_path.dart';
 
 void main() {
   group('FirestorePath', () {

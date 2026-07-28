@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:word_stock_2026/presentation/auth/password_reset/password_reset_page.dart';
+import 'package:word_stock/presentation/auth/password_reset/password_reset_page.dart';
 
 void main() {
   group('PasswordResetPage', () {

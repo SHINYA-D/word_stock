@@ -1,7 +1,7 @@
 import 'package:fpdart/fpdart.dart';
-import 'package:word_stock_2026/core/error/failure.dart';
-import 'package:word_stock_2026/domain/entities/test_result.dart';
-import 'package:word_stock_2026/domain/repositories/test_result_repository.dart';
+import 'package:word_stock/core/error/failure.dart';
+import 'package:word_stock/domain/entities/test_result.dart';
+import 'package:word_stock/domain/repositories/test_result_repository.dart';
 
 /// 開発用インメモリ成績リポジトリ。
 class MockTestResultRepository implements TestResultRepository {

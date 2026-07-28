@@ -1,6 +1,6 @@
 ---
 name: git-commit-flow
-description: WordStock2026でユーザーから明示的に「コミットして」「commitして」と依頼されたときに使う。CLAUDE.mdのコミットプレフィックス規約(feat/fix/docs/style/refactor/test/chore)に沿ったコミットメッセージを作成し、安全にgit commitを実行する。ユーザーが明示的に依頼していない限りこのSkillは使わない。
+description: WordStockでユーザーから明示的に「コミットして」「commitして」と依頼されたときに使う。CLAUDE.mdのコミットプレフィックス規約(feat/fix/docs/style/refactor/test/chore)に沿ったコミットメッセージを作成し、安全にgit commitを実行する。ユーザーが明示的に依頼していない限りこのSkillは使わない。
 ---
 
 # git コミット実行フロー

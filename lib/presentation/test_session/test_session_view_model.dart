@@ -1,7 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:word_stock_2026/domain/entities/word.dart';
-import 'package:word_stock_2026/core/di/test_result_providers.dart';
-import 'package:word_stock_2026/presentation/test_session/test_session_state.dart';
+import 'package:word_stock/domain/entities/word.dart';
+import 'package:word_stock/core/di/test_result_providers.dart';
+import 'package:word_stock/presentation/test_session/test_session_state.dart';
 
 part 'test_session_view_model.g.dart';
 

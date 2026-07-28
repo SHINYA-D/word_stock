@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:word_stock_2026/core/router/router.dart';
+import 'package:word_stock/core/router/router.dart';
 
 class TestResultPage extends StatelessWidget {
   const TestResultPage({

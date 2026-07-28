@@ -1,9 +1,9 @@
-import 'package:word_stock_2026/domain/entities/folder.dart';
-import 'package:word_stock_2026/domain/entities/test_result.dart';
-import 'package:word_stock_2026/domain/entities/user_settings.dart';
-import 'package:word_stock_2026/domain/entities/word.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/firestore_data_source.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/network/connectivity_monitor.dart';
+import 'package:word_stock/domain/entities/folder.dart';
+import 'package:word_stock/domain/entities/test_result.dart';
+import 'package:word_stock/domain/entities/user_settings.dart';
+import 'package:word_stock/domain/entities/word.dart';
+import 'package:word_stock/infrastructure/data_sources/firestore_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/network/connectivity_monitor.dart';
 
 /// [FirestoreDataSource] の実装を Firebase 無しで検証するためのフェイク。
 ///

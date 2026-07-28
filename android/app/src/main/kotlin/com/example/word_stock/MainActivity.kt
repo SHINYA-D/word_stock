@@ -1,4 +1,4 @@
-package com.example.word_stock_2026
+package com.example.word_stock
 
 import android.os.Bundle
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen

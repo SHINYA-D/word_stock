@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:word_stock_2026/presentation/auth/auth_state.dart';
-import 'package:word_stock_2026/presentation/auth/login/login_page.dart';
-import 'package:word_stock_2026/presentation/auth/login/login_view_model.dart';
+import 'package:word_stock/presentation/auth/auth_state.dart';
+import 'package:word_stock/presentation/auth/login/login_page.dart';
+import 'package:word_stock/presentation/auth/login/login_view_model.dart';
 
 void main() {
   group('LoginPage', () {

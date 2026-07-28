@@ -1,7 +1,7 @@
 import 'package:fpdart/fpdart.dart';
-import 'package:word_stock_2026/core/error/failure.dart';
-import 'package:word_stock_2026/domain/entities/word.dart';
-import 'package:word_stock_2026/domain/repositories/word_repository.dart';
+import 'package:word_stock/core/error/failure.dart';
+import 'package:word_stock/domain/entities/word.dart';
+import 'package:word_stock/domain/repositories/word_repository.dart';
 
 class UpdateWordUseCase {
   const UpdateWordUseCase(this._repository);

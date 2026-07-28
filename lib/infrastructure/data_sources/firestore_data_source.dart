@@ -1,9 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:word_stock_2026/core/firebase/firestore_path.dart';
-import 'package:word_stock_2026/domain/entities/folder.dart';
-import 'package:word_stock_2026/domain/entities/test_result.dart';
-import 'package:word_stock_2026/domain/entities/user_settings.dart';
-import 'package:word_stock_2026/domain/entities/word.dart';
+import 'package:word_stock/core/firebase/firestore_path.dart';
+import 'package:word_stock/domain/entities/folder.dart';
+import 'package:word_stock/domain/entities/test_result.dart';
+import 'package:word_stock/domain/entities/user_settings.dart';
+import 'package:word_stock/domain/entities/word.dart';
 
 class FirestoreDataSource {
   FirestoreDataSource({required FirebaseFirestore firestore})

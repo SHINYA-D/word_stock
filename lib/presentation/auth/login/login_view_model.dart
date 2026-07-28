@@ -1,8 +1,8 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:word_stock_2026/core/error/failure.dart';
-import 'package:word_stock_2026/presentation/auth/auth_state.dart';
-import 'package:word_stock_2026/core/di/auth_providers.dart';
-import 'package:word_stock_2026/core/di/sync_status_providers.dart';
+import 'package:word_stock/core/error/failure.dart';
+import 'package:word_stock/presentation/auth/auth_state.dart';
+import 'package:word_stock/core/di/auth_providers.dart';
+import 'package:word_stock/core/di/sync_status_providers.dart';
 
 part 'login_view_model.g.dart';
 

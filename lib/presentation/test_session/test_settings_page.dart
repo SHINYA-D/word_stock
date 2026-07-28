@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:word_stock_2026/core/di/auth_providers.dart';
-import 'package:word_stock_2026/core/router/router.dart';
-import 'package:word_stock_2026/presentation/word/word_list_view_model.dart';
+import 'package:word_stock/core/di/auth_providers.dart';
+import 'package:word_stock/core/router/router.dart';
+import 'package:word_stock/presentation/word/word_list_view_model.dart';
 
 class TestSettingsPage extends ConsumerStatefulWidget {
   const TestSettingsPage({

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:word_stock_2026/domain/entities/folder.dart';
+import 'package:word_stock/domain/entities/folder.dart';
 
 class FolderListTile extends StatelessWidget {
   const FolderListTile({
