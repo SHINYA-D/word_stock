@@ -1,6 +1,6 @@
 import 'package:fpdart/fpdart.dart';
-import 'package:word_stock_2026/core/error/failure.dart';
-import 'package:word_stock_2026/domain/entities/word.dart';
+import 'package:word_stock/core/error/failure.dart';
+import 'package:word_stock/domain/entities/word.dart';
 
 abstract class WordRepository {
   Future<Either<Failure, List<Word>>> getWords({

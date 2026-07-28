@@ -1,6 +1,6 @@
 ---
 name: build-runner-flow
-description: WordStock2026でFreezedのエンティティ(*.freezed.dart)やRiverpodのProvider(*.g.dart, router.g.dart)のソースを追加・変更した直後に、build_runnerでコード生成を実行したいときに使う。「コード生成して」「build_runner回して」等の依頼や、Freezed/Riverpod関連ファイル編集後の流れで発火する。
+description: WordStockでFreezedのエンティティ(*.freezed.dart)やRiverpodのProvider(*.g.dart, router.g.dart)のソースを追加・変更した直後に、build_runnerでコード生成を実行したいときに使う。「コード生成して」「build_runner回して」等の依頼や、Freezed/Riverpod関連ファイル編集後の流れで発火する。
 ---
 
 # build_runner 実行フロー

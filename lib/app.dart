@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:word_stock_2026/core/app_lifecycle_observer.dart';
-import 'package:word_stock_2026/core/di/auth_providers.dart';
-import 'package:word_stock_2026/core/di/local_data_source_providers.dart';
-import 'package:word_stock_2026/core/di/sync_providers.dart';
-import 'package:word_stock_2026/core/router/router.dart';
-import 'package:word_stock_2026/core/theme/app_theme.dart';
-import 'package:word_stock_2026/presentation/settings/settings_view_model.dart';
+import 'package:word_stock/core/app_lifecycle_observer.dart';
+import 'package:word_stock/core/di/auth_providers.dart';
+import 'package:word_stock/core/di/local_data_source_providers.dart';
+import 'package:word_stock/core/di/sync_providers.dart';
+import 'package:word_stock/core/router/router.dart';
+import 'package:word_stock/core/theme/app_theme.dart';
+import 'package:word_stock/presentation/settings/settings_view_model.dart';
 
 class App extends ConsumerStatefulWidget {
   const App({super.key});

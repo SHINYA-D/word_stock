@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:word_stock_2026/presentation/home/home_page.dart';
-import 'package:word_stock_2026/presentation/home/home_state.dart';
-import 'package:word_stock_2026/presentation/home/home_view_model.dart';
+import 'package:word_stock/presentation/home/home_page.dart';
+import 'package:word_stock/presentation/home/home_state.dart';
+import 'package:word_stock/presentation/home/home_view_model.dart';
 
 import '../../helpers/test_helpers.dart';
 

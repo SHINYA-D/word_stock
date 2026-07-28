@@ -1,6 +1,6 @@
 import 'package:fpdart/fpdart.dart';
-import 'package:word_stock_2026/core/error/failure.dart';
-import 'package:word_stock_2026/domain/entities/user_settings.dart';
+import 'package:word_stock/core/error/failure.dart';
+import 'package:word_stock/domain/entities/user_settings.dart';
 
 abstract class SettingsRepository {
   Future<Either<Failure, UserSettings>> getSettings({

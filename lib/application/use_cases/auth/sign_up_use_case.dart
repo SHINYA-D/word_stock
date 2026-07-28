@@ -1,10 +1,10 @@
 import 'dart:developer' show log;
 
 import 'package:fpdart/fpdart.dart';
-import 'package:word_stock_2026/core/error/failure.dart';
-import 'package:word_stock_2026/domain/entities/app_user.dart';
-import 'package:word_stock_2026/domain/repositories/auth_repository.dart';
-import 'package:word_stock_2026/infrastructure/sync/sync_service.dart';
+import 'package:word_stock/core/error/failure.dart';
+import 'package:word_stock/domain/entities/app_user.dart';
+import 'package:word_stock/domain/repositories/auth_repository.dart';
+import 'package:word_stock/infrastructure/sync/sync_service.dart';
 
 class SignUpUseCase {
   const SignUpUseCase(this._repository, this._syncService);

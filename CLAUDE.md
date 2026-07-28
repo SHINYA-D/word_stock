@@ -1,4 +1,4 @@
-# WordStock2026
+# WordStock
 Claude Code がこのリポジトリで事故らないための最小限の運用ルール集。
 
 ## コマンド

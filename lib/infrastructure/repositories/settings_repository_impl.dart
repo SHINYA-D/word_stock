@@ -1,15 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:word_stock_2026/core/error/failure.dart';
-import 'package:word_stock_2026/domain/entities/user_settings.dart';
-import 'package:word_stock_2026/domain/repositories/settings_repository.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/firestore_data_source.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/database_helper.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/settings_local_data_source.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/sync_queue_data_source.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/tables/settings_table.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/network/connectivity_monitor.dart';
+import 'package:word_stock/core/error/failure.dart';
+import 'package:word_stock/domain/entities/user_settings.dart';
+import 'package:word_stock/domain/repositories/settings_repository.dart';
+import 'package:word_stock/infrastructure/data_sources/firestore_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
+import 'package:word_stock/infrastructure/data_sources/local/settings_local_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/settings_table.dart';
+import 'package:word_stock/infrastructure/data_sources/network/connectivity_monitor.dart';
 
 class SettingsRepositoryImpl implements SettingsRepository {
   SettingsRepositoryImpl({

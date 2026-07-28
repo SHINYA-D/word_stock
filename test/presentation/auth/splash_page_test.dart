@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:word_stock_2026/core/di/auth_providers.dart';
-import 'package:word_stock_2026/domain/entities/app_user.dart';
-import 'package:word_stock_2026/presentation/auth/splash/splash_page.dart';
+import 'package:word_stock/core/di/auth_providers.dart';
+import 'package:word_stock/domain/entities/app_user.dart';
+import 'package:word_stock/presentation/auth/splash/splash_page.dart';
 
 void main() {
   group('SplashPage', () {

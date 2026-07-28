@@ -767,7 +767,7 @@ service cloud.firestore {
 ## 12. pubspec.yaml（パッケージ構成）
 
 ```yaml
-name: word_stock_2026
+name: word_stock
 description: テスト機能付き単語帳アプリ
 publish_to: 'none'
 

@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/network/connectivity_monitor.dart';
-import 'package:word_stock_2026/infrastructure/sync/sync_service.dart';
+import 'package:word_stock/infrastructure/data_sources/network/connectivity_monitor.dart';
+import 'package:word_stock/infrastructure/sync/sync_service.dart';
 
 class AppLifecycleObserver extends WidgetsBindingObserver {
   AppLifecycleObserver({

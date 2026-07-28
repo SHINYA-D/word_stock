@@ -3,8 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/firebase_auth_data_source.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/firestore_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/firebase_auth_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/firestore_data_source.dart';
 
 part 'firebase_providers.g.dart';
 

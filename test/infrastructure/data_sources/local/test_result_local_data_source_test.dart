@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:word_stock_2026/domain/entities/test_result.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/database_helper.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/tables/test_result_table.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/test_result_local_data_source.dart';
+import 'package:word_stock/domain/entities/test_result.dart';
+import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/test_result_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/test_result_local_data_source.dart';
 
 void main() {
   const userId = 'user-1';

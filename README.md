@@ -1,4 +1,4 @@
-# WordStock2026
+# WordStock
 
 単語を自分で登録して学習できるフラッシュカード型単語帳アプリです。
 フォルダ分けで教科や目的ごとに整理し、カードめくり形式のテストで記憶の定着をサポートします。
@@ -220,11 +220,11 @@ Firebaseコンソール > 設定 > 全般 > 一番下までスクロール後、
 
 **Android:**
 ```
-/word_stock_2026/android/app/google-services.json
+/word_stock/android/app/google-services.json
 ```
 **iOS:**
 ```
-/word_stock_2026/ios/Runner/GoogleService-Info.plist
+/word_stock/ios/Runner/GoogleService-Info.plist
 ```
 
 ⑪ 環境変数の設定ファイルを配置する（担当者からもらってください）

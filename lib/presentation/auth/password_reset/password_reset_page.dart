@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:word_stock_2026/presentation/auth/auth_state.dart';
-import 'package:word_stock_2026/presentation/auth/password_reset/password_reset_view_model.dart';
+import 'package:word_stock/presentation/auth/auth_state.dart';
+import 'package:word_stock/presentation/auth/password_reset/password_reset_view_model.dart';
 
 class PasswordResetPage extends ConsumerStatefulWidget {
   const PasswordResetPage({super.key});

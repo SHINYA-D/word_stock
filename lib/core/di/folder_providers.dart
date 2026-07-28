@@ -1,10 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:word_stock_2026/application/use_cases/folder/create_folder_use_case.dart';
-import 'package:word_stock_2026/application/use_cases/folder/delete_folder_use_case.dart';
-import 'package:word_stock_2026/application/use_cases/folder/get_folders_use_case.dart';
-import 'package:word_stock_2026/application/use_cases/folder/update_folder_use_case.dart';
-import 'package:word_stock_2026/core/di/repository_providers.dart';
+import 'package:word_stock/application/use_cases/folder/create_folder_use_case.dart';
+import 'package:word_stock/application/use_cases/folder/delete_folder_use_case.dart';
+import 'package:word_stock/application/use_cases/folder/get_folders_use_case.dart';
+import 'package:word_stock/application/use_cases/folder/update_folder_use_case.dart';
+import 'package:word_stock/core/di/repository_providers.dart';
 
 part 'folder_providers.g.dart';
 

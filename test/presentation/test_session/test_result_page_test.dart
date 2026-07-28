@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:word_stock_2026/presentation/test_session/test_result_page.dart';
+import 'package:word_stock/presentation/test_session/test_result_page.dart';
 
 // TestResultPage はコンストラクタ引数のみで完結する純粋な StatelessWidget
 // Provider / Firebase 依存なし

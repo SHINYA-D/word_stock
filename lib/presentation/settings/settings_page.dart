@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:word_stock_2026/core/router/router.dart';
-import 'package:word_stock_2026/core/theme/app_theme.dart';
-import 'package:word_stock_2026/core/widgets/error_screen.dart';
-import 'package:word_stock_2026/core/di/auth_providers.dart';
-import 'package:word_stock_2026/presentation/settings/settings_view_model.dart';
+import 'package:word_stock/core/router/router.dart';
+import 'package:word_stock/core/theme/app_theme.dart';
+import 'package:word_stock/core/widgets/error_screen.dart';
+import 'package:word_stock/core/di/auth_providers.dart';
+import 'package:word_stock/presentation/settings/settings_view_model.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});

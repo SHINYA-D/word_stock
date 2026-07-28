@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:word_stock_2026/domain/entities/user_settings.dart';
-import 'package:word_stock_2026/presentation/settings/settings_page.dart';
-import 'package:word_stock_2026/presentation/settings/settings_view_model.dart';
+import 'package:word_stock/domain/entities/user_settings.dart';
+import 'package:word_stock/presentation/settings/settings_page.dart';
+import 'package:word_stock/presentation/settings/settings_view_model.dart';
 
 import '../../helpers/test_helpers.dart';
 

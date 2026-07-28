@@ -1,6 +1,6 @@
 import 'package:fpdart/fpdart.dart';
-import 'package:word_stock_2026/core/error/failure.dart';
-import 'package:word_stock_2026/domain/entities/app_user.dart';
+import 'package:word_stock/core/error/failure.dart';
+import 'package:word_stock/domain/entities/app_user.dart';
 
 abstract class AuthRepository {
   Stream<AppUser?> get authStateChanges;

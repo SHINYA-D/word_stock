@@ -1,6 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:word_stock_2026/domain/entities/user_settings.dart';
-import 'package:word_stock_2026/core/di/settings_providers.dart';
+import 'package:word_stock/domain/entities/user_settings.dart';
+import 'package:word_stock/core/di/settings_providers.dart';
 
 part 'settings_view_model.g.dart';
 

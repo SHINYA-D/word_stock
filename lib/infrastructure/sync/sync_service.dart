@@ -2,15 +2,15 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:word_stock_2026/core/firebase/firestore_path.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/database_helper.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/sync_queue_data_source.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/tables/folder_table.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/tables/settings_table.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/tables/sync_meta_table.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/tables/test_result_table.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/tables/word_table.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/network/connectivity_monitor.dart';
+import 'package:word_stock/core/firebase/firestore_path.dart';
+import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
+import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/folder_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/settings_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/sync_meta_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/test_result_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/word_table.dart';
+import 'package:word_stock/infrastructure/data_sources/network/connectivity_monitor.dart';
 
 class SyncService {
   SyncService({

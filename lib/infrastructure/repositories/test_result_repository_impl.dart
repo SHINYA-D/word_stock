@@ -1,15 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:uuid/uuid.dart';
-import 'package:word_stock_2026/core/error/failure.dart';
-import 'package:word_stock_2026/domain/entities/test_result.dart';
-import 'package:word_stock_2026/domain/repositories/test_result_repository.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/firestore_data_source.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/database_helper.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/sync_queue_data_source.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/tables/test_result_table.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/local/test_result_local_data_source.dart';
-import 'package:word_stock_2026/infrastructure/data_sources/network/connectivity_monitor.dart';
+import 'package:word_stock/core/error/failure.dart';
+import 'package:word_stock/domain/entities/test_result.dart';
+import 'package:word_stock/domain/repositories/test_result_repository.dart';
+import 'package:word_stock/infrastructure/data_sources/firestore_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
+import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/test_result_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/test_result_local_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/network/connectivity_monitor.dart';
 
 class TestResultRepositoryImpl implements TestResultRepository {
   TestResultRepositoryImpl({

@@ -3,10 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:word_stock_2026/core/router/router.dart';
-import 'package:word_stock_2026/domain/entities/word.dart';
-import 'package:word_stock_2026/presentation/test_session/test_session_state.dart';
-import 'package:word_stock_2026/presentation/test_session/test_session_view_model.dart';
+import 'package:word_stock/core/router/router.dart';
+import 'package:word_stock/domain/entities/word.dart';
+import 'package:word_stock/presentation/test_session/test_session_state.dart';
+import 'package:word_stock/presentation/test_session/test_session_view_model.dart';
 
 class TestPage extends ConsumerStatefulWidget {
   const TestPage({
