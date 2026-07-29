@@ -97,7 +97,14 @@ class _WordListPageState extends ConsumerState<WordListPage> {
               itemCount: filtered.length,
               itemBuilder: (context, i) => _WordTile(
                 word: filtered[i],
-                onEdit: () => _showFormDialog(context, controller, word: filtered[i]),
+                onTap: () => WordEditRoute(
+                  folderId: widget.folderId,
+                  $extra: filtered[i],
+                ).push(context),
+                onEdit: () => WordEditRoute(
+                  folderId: widget.folderId,
+                  $extra: filtered[i],
+                ).push(context),
                 onDelete: () => _showDeleteDialog(context, controller, filtered[i]),
               ),
             ),
@@ -105,71 +112,8 @@ class _WordListPageState extends ConsumerState<WordListPage> {
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _showFormDialog(context, controller),
+        onPressed: () => WordCreateRoute(folderId: widget.folderId).push(context),
         child: const Icon(Icons.add),
-      ),
-    );
-  }
-
-  void _showFormDialog(
-    BuildContext context,
-    WordListViewModel controller, {
-    Word? word,
-  }) {
-    final frontController = TextEditingController(text: word?.front);
-    final backController = TextEditingController(text: word?.back);
-    final formKey = GlobalKey<FormState>();
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(word == null ? '単語を追加' : '単語を編集'),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: frontController,
-                autofocus: true,
-                decoration: const InputDecoration(labelText: '単語（表面）'),
-                validator: (v) => (v == null || v.isEmpty) ? '入力してください' : null,
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: backController,
-                decoration: const InputDecoration(labelText: '意味（裏面）'),
-                validator: (v) => (v == null || v.isEmpty) ? '入力してください' : null,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                if (word == null) {
-                  controller.createWord(
-                    front: frontController.text.trim(),
-                    back: backController.text.trim(),
-                  );
-                } else {
-                  controller.updateWord(
-                    wordId: word.id,
-                    front: frontController.text.trim(),
-                    back: backController.text.trim(),
-                  );
-                }
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('保存'),
-          ),
-        ],
       ),
     );
   }
@@ -202,11 +146,13 @@ class _WordListPageState extends ConsumerState<WordListPage> {
 class _WordTile extends StatelessWidget {
   const _WordTile({
     required this.word,
+    required this.onTap,
     required this.onEdit,
     required this.onDelete,
   });
 
   final Word word;
+  final VoidCallback onTap;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
@@ -223,13 +169,22 @@ class _WordTile extends StatelessWidget {
       ),
       child: ListTile(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        onTap: onTap,
         title: Text(
           word.front,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          softWrap: false,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 2),
-          child: Text(word.back),
+          child: Text(
+            word.back,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            softWrap: false,
+          ),
         ),
         trailing: PopupMenuButton<_Action>(
           icon: const Icon(Icons.more_vert),

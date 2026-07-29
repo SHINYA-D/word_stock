@@ -16,6 +16,8 @@ import 'package:word_stock/presentation/shell/shell_page.dart';
 import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_page.dart';
 import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_result_page.dart';
 import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_settings_page.dart';
+import 'package:word_stock/presentation/word/word_create_page.dart';
+import 'package:word_stock/presentation/word/word_edit_page.dart';
 import 'package:word_stock/presentation/word/word_list_page.dart';
 
 part 'router.g.dart';
@@ -136,6 +138,33 @@ class FlashcardModeRoute extends GoRouteData {
       folderName: $extra.folderName,
       userId: $extra.userId,
     );
+  }
+}
+
+@immutable
+@TypedGoRoute<WordEditRoute>(path: '/word-edit/:folderId')
+class WordEditRoute extends GoRouteData {
+  const WordEditRoute({required this.folderId, required this.$extra});
+
+  final String folderId;
+  final Word $extra;
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) {
+    return WordEditPage(folderId: folderId, word: $extra);
+  }
+}
+
+@immutable
+@TypedGoRoute<WordCreateRoute>(path: '/word-create/:folderId')
+class WordCreateRoute extends GoRouteData {
+  const WordCreateRoute({required this.folderId});
+
+  final String folderId;
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) {
+    return WordCreatePage(folderId: folderId);
   }
 }
 

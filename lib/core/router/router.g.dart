@@ -13,6 +13,8 @@ List<RouteBase> get $appRoutes => [
       $passwordResetRoute,
       $flashcardModeSettingsRoute,
       $flashcardModeRoute,
+      $wordEditRoute,
+      $wordCreateRoute,
       $flashcardModeResultRoute,
       $appShellRoute,
     ];
@@ -160,6 +162,57 @@ extension $FlashcardModeRouteExtension on FlashcardModeRoute {
 
   void replace(BuildContext context) =>
       context.replace(location, extra: $extra);
+}
+
+RouteBase get $wordEditRoute => GoRouteData.$route(
+      path: '/word-edit/:folderId',
+      factory: $WordEditRouteExtension._fromState,
+    );
+
+extension $WordEditRouteExtension on WordEditRoute {
+  static WordEditRoute _fromState(GoRouterState state) => WordEditRoute(
+        folderId: state.pathParameters['folderId']!,
+        $extra: state.extra as Word,
+      );
+
+  String get location => GoRouteData.$location(
+        '/word-edit/${Uri.encodeComponent(folderId)}',
+      );
+
+  void go(BuildContext context) => context.go(location, extra: $extra);
+
+  Future<T?> push<T>(BuildContext context) =>
+      context.push<T>(location, extra: $extra);
+
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location, extra: $extra);
+
+  void replace(BuildContext context) =>
+      context.replace(location, extra: $extra);
+}
+
+RouteBase get $wordCreateRoute => GoRouteData.$route(
+      path: '/word-create/:folderId',
+      factory: $WordCreateRouteExtension._fromState,
+    );
+
+extension $WordCreateRouteExtension on WordCreateRoute {
+  static WordCreateRoute _fromState(GoRouterState state) => WordCreateRoute(
+        folderId: state.pathParameters['folderId']!,
+      );
+
+  String get location => GoRouteData.$location(
+        '/word-create/${Uri.encodeComponent(folderId)}',
+      );
+
+  void go(BuildContext context) => context.go(location);
+
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  void replace(BuildContext context) => context.replace(location);
 }
 
 RouteBase get $flashcardModeResultRoute => GoRouteData.$route(
