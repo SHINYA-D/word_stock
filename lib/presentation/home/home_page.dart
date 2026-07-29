@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:word_stock/core/router/router.dart';
+import 'package:word_stock/core/utils/folder_name_validator.dart';
 import 'package:word_stock/core/widgets/error_screen.dart';
 import 'package:word_stock/domain/entities/folder.dart';
 import 'package:word_stock/presentation/home/home_view_model.dart';
@@ -53,30 +54,14 @@ class HomePage extends ConsumerWidget {
     final textController = TextEditingController();
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('フォルダを作成'),
-        content: TextField(
-          controller: textController,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'フォルダ名'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (textController.text.trim().isNotEmpty) {
-                controller.createFolder(
-                  name: textController.text.trim(),
-                );
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('作成'),
-          ),
-        ],
+      builder: (ctx) => _FolderNameDialog(
+        title: 'フォルダを作成',
+        textController: textController,
+        confirmLabel: '作成',
+        onConfirm: (name) {
+          controller.createFolder(name: name);
+          Navigator.pop(ctx);
+        },
       ),
     );
   }
@@ -85,31 +70,14 @@ class HomePage extends ConsumerWidget {
     final textController = TextEditingController(text: folder.name);
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('フォルダ名を変更'),
-        content: TextField(
-          controller: textController,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'フォルダ名'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('キャンセル'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (textController.text.trim().isNotEmpty) {
-                controller.updateFolder(
-                  folderId: folder.id,
-                  name: textController.text.trim(),
-                );
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('保存'),
-          ),
-        ],
+      builder: (ctx) => _FolderNameDialog(
+        title: 'フォルダ名を変更',
+        textController: textController,
+        confirmLabel: '保存',
+        onConfirm: (name) {
+          controller.updateFolder(folderId: folder.id, name: name);
+          Navigator.pop(ctx);
+        },
       ),
     );
   }
@@ -164,6 +132,70 @@ class _EmptyView extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _FolderNameDialog extends StatefulWidget {
+  const _FolderNameDialog({
+    required this.title,
+    required this.textController,
+    required this.confirmLabel,
+    required this.onConfirm,
+  });
+
+  final String title;
+  final TextEditingController textController;
+  final String confirmLabel;
+  final ValueChanged<String> onConfirm;
+
+  @override
+  State<_FolderNameDialog> createState() => _FolderNameDialogState();
+}
+
+class _FolderNameDialogState extends State<_FolderNameDialog> {
+  @override
+  void initState() {
+    super.initState();
+    widget.textController.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.textController.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() => setState(() {});
+
+  bool get _canConfirm => widget.textController.text.trim().isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: TextField(
+        controller: widget.textController,
+        autofocus: true,
+        maxLines: 1,
+        inputFormatters: const [FolderNameLengthFormatter()],
+        decoration: const InputDecoration(
+          labelText: 'フォルダ名',
+          helperText: '半角20文字（全角10文字）まで',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          onPressed: _canConfirm
+              ? () => widget.onConfirm(widget.textController.text.trim())
+              : null,
+          child: Text(widget.confirmLabel),
+        ),
+      ],
     );
   }
 }

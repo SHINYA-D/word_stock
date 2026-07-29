@@ -43,6 +43,9 @@ class FolderListTile extends StatelessWidget {
         ),
         title: Text(
           folder.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          softWrap: false,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         trailing: PopupMenuButton<_Action>(
