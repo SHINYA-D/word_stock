@@ -44,7 +44,7 @@ void main() {
       // カードの表面テキスト
       expect(find.text('apple'), findsOneWidget);
       // 表面ラベル
-      expect(find.text('表面'), findsOneWidget);
+      expect(find.text('表'), findsOneWidget);
       // タップヒント
       expect(find.text('タップして裏面を確認'), findsOneWidget);
     });
