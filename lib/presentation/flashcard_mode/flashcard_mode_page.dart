@@ -32,6 +32,7 @@ class _FlashcardModePageState extends ConsumerState<FlashcardModePage>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _flipAnimation;
+  bool _hasFlippedOnce = false;
 
   @override
   void initState() {
@@ -65,12 +66,14 @@ class _FlashcardModePageState extends ConsumerState<FlashcardModePage>
     if (_controller.isAnimating) return;
     await _controller.animateTo(0.5);
     vm.flip();
+    setState(() => _hasFlippedOnce = true);
     await _controller.animateTo(1.0);
     _controller.reset();
   }
 
   void _resetFlipForNext() {
     _controller.reset();
+    setState(() => _hasFlippedOnce = false);
   }
 
   @override
@@ -133,6 +136,7 @@ class _FlashcardModePageState extends ConsumerState<FlashcardModePage>
                 currentIndex: state.currentIndex,
                 total: state.total,
                 isFlipped: state.isFlipped,
+                hasFlippedOnce: _hasFlippedOnce,
                 isSubmitting: state.isSubmitting,
                 flipAnimation: _flipAnimation,
                 onFlip: () => _flip(vm),
@@ -159,6 +163,7 @@ class _InProgressView extends StatelessWidget {
     required this.currentIndex,
     required this.total,
     required this.isFlipped,
+    required this.hasFlippedOnce,
     required this.isSubmitting,
     required this.flipAnimation,
     required this.onFlip,
@@ -170,6 +175,7 @@ class _InProgressView extends StatelessWidget {
   final int currentIndex;
   final int total;
   final bool isFlipped;
+  final bool hasFlippedOnce;
   final bool isSubmitting;
   final Animation<double> flipAnimation;
   final VoidCallback onFlip;
@@ -193,14 +199,9 @@ class _InProgressView extends StatelessWidget {
                           fontWeight: FontWeight.bold,
                         ),
                   ),
-                  Text(
-                    isFlipped ? '裏面' : '表面',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
-                        ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => _confirmExit(context),
                   ),
                 ],
               ),
@@ -222,7 +223,7 @@ class _InProgressView extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             child: GestureDetector(
-              onTap: isFlipped ? null : onFlip,
+              onTap: onFlip,
               child: AnimatedBuilder(
                 animation: flipAnimation,
                 builder: (context, _) {
@@ -238,7 +239,7 @@ class _InProgressView extends StatelessWidget {
                     transform: transform,
                     child: _FlashCard(
                       text: isFlipped ? word.back : word.front,
-                      label: isFlipped ? '意味' : '単語',
+                      label: isFlipped ? '裏' : '表',
                       showHint: !isFlipped,
                     ),
                   );
@@ -249,7 +250,7 @@ class _InProgressView extends StatelessWidget {
         ),
         AnimatedSize(
           duration: const Duration(milliseconds: 200),
-          child: isFlipped
+          child: hasFlippedOnce
               ? Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                   child: Row(
@@ -279,6 +280,29 @@ class _InProgressView extends StatelessWidget {
       ],
     );
   }
+
+  Future<void> _confirmExit(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('テストを途中終了しますか？'),
+        content: const Text('テストを途中終了すると成績には含まれません。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('いいえ'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('はい'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      const HomeRoute().go(context);
+    }
+  }
 }
 
 class _FlashCard extends StatelessWidget {
@@ -299,63 +323,77 @@ class _FlashCard extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: SizedBox(
         width: double.infinity,
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  label,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onPrimaryContainer,
-                      ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                text,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-              ),
-              if (showHint) ...[
-                const SizedBox(height: 32),
-                Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(32),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      Icons.touch_app_outlined,
-                      size: 16,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withValues(alpha: 0.4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        label,
+                        style:
+                            Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onPrimaryContainer,
+                                ),
+                      ),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'タップして裏面を確認',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    if (showHint) ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.touch_app_outlined,
+                            size: 16,
                             color: Theme.of(context)
                                 .colorScheme
                                 .onSurface
                                 .withValues(alpha: 0.4),
                           ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'タップして裏面を確認',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurface
+                                      .withValues(alpha: 0.4),
+                                ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    Text(
+                      text,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineMedium
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
                   ],
                 ),
-              ],
-            ],
-          ),
+              ),
+            );
+          },
         ),
       ),
     );

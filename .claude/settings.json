@@ -12,12 +12,9 @@
       "Bash(git show *)",
       "Bash(git branch *)",
       "Bash(git checkout *)",
-      "Bash(git stash *)"
-    ],
-    "ask": [
-      "Read(lib/firebase_options.dart)",
-      "Bash(git push *)",
-      "Bash(git clean *)"
+      "Bash(git stash *)",
+      "Bash(plutil -p /Users/a12345/StudioProjects/word_stock/ios/Runner/GoogleService-Info.plist)",
+      "Bash(git check-ignore *)"
     ],
     "deny": [
       "Read(.env*)",
@@ -41,6 +38,11 @@
       "Bash(cat **/key.properties)",
       "Bash(printenv)",
       "Bash(env)"
+    ],
+    "ask": [
+      "Read(lib/firebase_options.dart)",
+      "Bash(git push *)",
+      "Bash(git clean *)"
     ]
   }
 }

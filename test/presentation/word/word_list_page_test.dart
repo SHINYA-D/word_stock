@@ -94,20 +94,22 @@ void main() {
       expect(find.text('banana'), findsOneWidget);
     });
 
-    testWidgets('FAB をタップすると単語追加ダイアログが表示される', (tester) async {
+    testWidgets('単語追加用の FAB が表示される', (tester) async {
       await tester.pumpWidget(
         buildWordListPage(extra: [
           wordListViewModelProvider(_folderId)
               .overrideWith(DataWordListViewModel.new),
         ]),
       );
-
-      await tester.tap(find.byType(FloatingActionButton));
       await tester.pumpAndSettle();
 
-      expect(find.text('単語を追加'), findsOneWidget);
-      expect(find.text('単語（表面）'), findsOneWidget);
-      expect(find.text('意味（裏面）'), findsOneWidget);
+      // FAB タップ時は WordCreateRoute へ画面遷移する（ダイアログ表示は廃止）。
+      // ルーター依存のため遷移自体はここでは検証せず、FAB の存在のみ確認する。
+      expect(find.byType(FloatingActionButton), findsOneWidget);
+      expect(find.descendant(
+        of: find.byType(FloatingActionButton),
+        matching: find.byIcon(Icons.add),
+      ), findsOneWidget);
     });
   });
 }
