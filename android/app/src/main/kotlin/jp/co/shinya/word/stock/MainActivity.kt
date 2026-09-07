@@ -1,4 +1,4 @@
-package com.example.word_stock
+package jp.co.shinya.word.stock
 
 import android.os.Bundle
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
