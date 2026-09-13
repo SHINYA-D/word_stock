@@ -1,20 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(fvm flutter *)",
-      "Bash(fvm dart *)",
-      "Bash(dart run build_runner *)",
-      "Bash(git status)",
-      "Bash(git diff)",
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(git log *)",
-      "Bash(git show *)",
-      "Bash(git branch *)",
-      "Bash(git checkout *)",
-      "Bash(git stash *)",
-      "Bash(plutil -p /Users/a12345/StudioProjects/word_stock/ios/Runner/GoogleService-Info.plist)",
-      "Bash(git check-ignore *)"
+      "Bash(*)",
+      "Read(*)"
     ],
     "deny": [
       "Read(.env*)",
@@ -40,9 +28,41 @@
       "Bash(env)"
     ],
     "ask": [
-      "Read(lib/firebase_options.dart)",
-      "Bash(git push *)",
-      "Bash(git clean *)"
+      "Bash(git push *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/hooks/block_direct_flutter_test.sh",
+            "statusMessage": "テスト実行方法を確認中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/hooks/require_test_loop_skill.sh",
+            "statusMessage": "test-loop手順書の読み込みを確認中..."
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/hooks/block_generated_file_edit.sh",
+            "statusMessage": "生成ファイルへの変更でないか確認中..."
+          }
+        ]
+      }
     ]
   }
 }

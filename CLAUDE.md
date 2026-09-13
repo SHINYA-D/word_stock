@@ -41,6 +41,64 @@ fvm flutter run --dart-define=USE_MOCKS=true
 実装の判断に迷ったら「このコードはテストできるか？」を基準に選ぶ。
 テスタブルであることを最優先とし、シンプルさを優先する（過剰なエラーハンドリングや複雑な設計より）。
 
+## テスト方針
+
+単体テスト・Widgetテスト工程の自動生成パイプライン（`.claude/agents/test-*`, `.claude/skills/*-test-authoring`,
+`.claude/skills/test-loop`, `scripts/test_harness.sh`）で運用する。
+
+### テスト種別の使い分け
+
+| 対象 | 種別 | 方式 |
+|------|------|------|
+| ViewModel のロジック（ステートマシン・楽観的更新・`result.fold` の分岐・ガード条件・境界値） | 単体テスト | `test()` + `ProviderContainer(overrides: [...])` + `addTearDown(container.dispose)`。Widget は pump しない |
+| UseCase / Repository実装 / Entity の独自ロジック / 純粋関数 | 単体テスト | `test()` |
+| Page の描画・ユーザー操作（タップ→遷移、ダイアログ表示、一覧表示） | Widgetテスト | `testWidgets()` + `buildWithMockRepositories()` |
+
+- **Widgetテストでロジック網羅を狙わない**（ViewModel単体テストとの二重化を避ける）
+- `mockito` / `mocktail` は使わない。手書き Fake（`test/helpers/fake_infrastructure.dart`）+
+  Mock Repository（`lib/infrastructure/repositories/mock/`）+ ViewModel サブクラス override が標準
+- SQLite 依存の単体テストは `sqflite_common_ffi`（`sqfliteFfiInit()` + `databaseFactory = databaseFactoryFfi`）
+  を使い、テストファイルごとに `Directory.systemTemp.createTemp()` で DB ロック競合を避ける
+
+### カバレッジ基準
+
+- 分母は「限定分母」= `lib/domain/entities/` のうちロジックを持つもの・`lib/application/use_cases/`・
+  `lib/infrastructure/repositories/`（`mock/` 除く）・`lib/infrastructure/sync/`・
+  `lib/infrastructure/data_sources/local/`・`lib/presentation/**/*_view_model.dart`・`lib/core/utils/`
+- 除外 = `*.freezed.dart` / `*.g.dart` / `router.g.dart` / `main.dart` / `firebase_options.dart` / 純粋UI Widget / Mock実装
+- 限定分母に対して **90%+** を目標（対象ファイル単位）。計測は `bash scripts/test_harness.sh` が自動で行う。
+  全体カバレッジは ⚠ 表示のみでハーネスの合否には使わない。90% 未満のファイルは Excel 項目書の
+  「要確認一覧」シートに、項目書の `## 対象外` に理由があれば「90%未満（理由あり）」、無ければ赤字の
+  「理由なし未達」として載る
+- テスト工程（test-loop）は途中で止めず、Excel 生成まで必ずやり切る。解消しきれなかった問題
+  （理由なし未達・テスト失敗・テスト漏れ・プロダクションコードのバグ）は「要確認一覧」で報告する。
+  プロダクションコードのバグはテスト工程では修正しない
+- **無価値テスト禁止**: カバレッジを満たすためだけの「コンストラクタを呼ぶだけ」「Freezed 生成物の getter/copyWith」
+  「定数クラス」のテストは書かない。未カバー行が無価値分岐なら項目書に「対象外・理由」を記録する
+- **テスト漏れゲート**: 限定分母のファイルは「テストがある（どれかのテストから読み込まれる）」か
+  「`test/coverage_exclusions.txt` に `<パス> | <理由>` で登録」のいずれか必須。どちらも満たさない
+  ファイルがあると `scripts/test_harness.sh`（全体実行）が `untested_files` として非 0 終了する
+  （`harness_report.py` が `is_target()` の全対象を glob 列挙 → lcov と突き合わせて検出）。
+  該当ファイルは Excel の「要確認一覧」に「テスト漏れ」として載る
+- 対象外登録の理由は Excel 項目書の「対象外一覧」シートに集約される。テストを後から追加したり
+  ファイルを消したら `coverage_exclusions.txt` の該当行も削除する（残ると `stale_exclusions` 警告。CI は落とさない）
+
+### 作法
+
+- 正常系・異常系・境界値を各対象で網羅する
+- テスト名は「○○の場合、△△が起きる」形式
+- テストコードを生成・変更したら、対応する項目書 MD（`test/test_cases/**/*_test_cases.md`）を必ずペアで更新する
+  （フォーマットは `.claude/skills/excel-testdoc-authoring/SKILL.md`、既存の
+  `test/test_cases/infrastructure/repositories/folder_repository_impl_test_cases.md` を正とする）
+- テスト実行・カバレッジ計測は `fvm flutter test` の直叩きではなく `bash scripts/test_harness.sh [<path>]` 経由で行う
+- **ループの継続/終了は自分で判断せず、回数も数えない。** `harness_report.json` の `loop.verdict`
+  （`scripts/loop_state.py` が算出）に従う。内部・外部のループ回数は `.test_loop/state.json` で
+  スクリプトが管理する（手で編集しない。1依頼＝1セッションで `end-session` / TTL 24h により破棄）
+- 項目書の `## 対象外` は `- L142-145：理由` のように**行番号を付ける**。ハーネスが lcov の
+  未カバー行と照合して「理由あり」を判定するため
+- 項目書 Excel は `.claude/agents/test-doc-excel-generator` が `scripts/gen_test_excel.py` 経由で
+  `~/Desktop/WordStock_テスト項目書_YYYYMMDD.xlsx` に生成する
+
 ## Freezed 3.x 構文
 
 **必ず 3.x の構文を使うこと**（`@freezed abstract class` / `sealed class`）。旧構文（`@freezed class` 単体）は使わない。
