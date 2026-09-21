@@ -1,6 +1,6 @@
 ---
 name: test-loop
-description: WordStockの単体テスト/Widgetテスト自動生成を「計画→生成→ハーネス実行→分析→再生成」で基準達成まで反復し、最後に網羅性・必要性レビューとExcel項目書生成まで行うループ手順。「テスト生成を回して」「単体テストを自動生成して」等の依頼、または /loop と併用するときに使う。
+description: WordStockの単体テスト/Widgetテスト自動生成を「計画→生成→ハーネス実行→分析→再生成」で基準達成まで反復し、最後に網羅性・必要性レビューとExcel項目書生成まで行うループ手順。「テスト生成を回して」「単体テストを自動生成して」等の依頼で使う。
 ---
 
 # テスト自動生成ループ（WordStock）
@@ -185,7 +185,7 @@ TodoWrite でも Tier 一覧を可視化する。
 
 ## やり切りは Stop フックが強制する
 
-`/loop`（時間間隔で再実行）や `/goal`（Haiku が会話を読んで完了判定）は使わない。
+`/goal`（Haiku が会話を読んで完了判定）は使わない。
 判定器は `loop_state.compute_verdict()` として既にあり、外部の評価モデルより正確なため。
 
 代わりに `scripts/hooks/require_test_loop_completion.py`（`Stop` フック）が、

@@ -199,10 +199,7 @@ Stop フック `scripts/hooks/require_test_loop_completion.py` も同じ `comple
 
 ## 呼び出し方
 
-- 単発で最後まで通しで回す場合: `/test-loop`
-- 1対象ずつターンを区切って回す場合（`/loop` と併用）: `/loop /test-loop`
-  - 1回の起動で「1対象分の手順1〜6」のみ実行し、`.test_loop/state.json` で進捗を引き継ぐ
-  - 全Tier `done` になったら仕上げ工程（7〜11）を1回だけ実行して終了する
+- `/test-loop` で起動し、Excel 生成まで1回で通して回す
 
 ## 生成される可能性のあるファイル一覧
 
