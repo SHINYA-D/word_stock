@@ -18,9 +18,17 @@
 |---------|-----------|---------------------|
 | `Bash` | Bashコマンド実行 | `block_direct_flutter_test.sh` |
 | `Agent\|Task` | サブエージェント起動 | `require_test_loop_skill.sh` |
-| `Edit\|Write` | ファイル編集・新規作成 | `block_generated_file_edit.sh` |
+| `Edit\|Write` | ファイル編集・新規作成 | `block_generated_file_edit.sh`（生成ファイル + `.test_loop/`） |
 
 同一matcherに複数フックを登録した場合は配列の順番通りに実行される（現状は各matcher 1本ずつ）。
+
+`Stop` フックは PreToolUse とは別のタイミング――**メインエージェントがターンを終えて
+ユーザーに制御を返そうとする瞬間**に発火し、`decision: "block"` を返すとターンが終わらず
+次のターンが始まる。
+
+| イベント | 挟んでいるスクリプト | 役割 |
+|---------|---------------------|------|
+| `Stop` | `require_test_loop_completion.py` | テスト工程を Excel 生成まで終わらせるまでターンを終了させない |
 
 図解: [images/hooks_overview.svg](images/hooks_overview.svg)（フック単体）/
 [images/test_pipeline_overview.svg](images/test_pipeline_overview.svg)（テスト工程のどこで発火するか）
@@ -95,7 +103,49 @@ Edit/Writeで指定されたファイルパスの拡張子・ファイル名が 
 
 ---
 
-## この3つのフックが対象にしていないこと
+## `scripts/hooks/require_test_loop_completion.py`（Stop用）
+
+**発火条件**: メインエージェントがターンを終えようとするたび（毎回）
+
+**根拠**: SKILL.md「大原則: テスト工程は必ず最後（手順10 Excel 生成）までやり切る」
+
+**やっていること**:
+
+| 状態 | 判定 |
+|------|------|
+| `.test_loop/state.json` が無い | 通す（テスト工程ではない） |
+| `completed_at` が立っている | 通す（Excel 生成済み＝工程完了） |
+| 進行中の対象の `loop.verdict` が `continue` | 拒否。`reason` を次ターンの指示として返す |
+| `verdict` が `stop` なのに `finish` 未実行 | 拒否。手順6を促す |
+| `scope`（未設定なら全対象）に未消化が残っている | 拒否。手順1へ戻す |
+| 全対象 done だが `completed_at` 無し | 拒否。手順7〜11を促す |
+
+**なぜ必要か**:
+二重ループ（内部3回・外部5回）は「回しすぎ」の上限であって、「あと1回回せ」を強制する力がない。
+`loop.verdict` が `continue` でも、ループを次の周に進める主体は LLM なので、途中でユーザーに
+制御を返してしまえばそこで工程が終わる。Stop フックは LLM が止まろうとする瞬間に割り込める
+唯一のタイミングで、ここに既存の `loop_state.compute_verdict()` を置くことで、自然言語のお願いを
+機構に変えている。判定ロジックは新規に書かず既存スクリプトを呼ぶだけ。
+
+**工程完了の証拠（`completed_at`）**:
+`gen_test_excel.py` が `wb.save()` に成功した直後にだけ `loop_state.mark_completed()` で記録する。
+`record_run()` と同じ「成果物を作った本人が記録する」方式で、Excel が無いのに記録だけある状態を
+作れない。`.test_loop/` への Edit/Write は `block_generated_file_edit.sh` が拒否するため手で捏造もできない。
+`end-session` も `completed_at` が無ければ非 0 で拒否する（Stop フックは「state.json が無い＝工程外」で
+通す分岐を持つため、ここを塞がないと「end-session を打てば終われる」近道が残るため）。
+
+**無限ループ対策**:
+「押し戻したのに LLM がハーネスを回さない」場合、`verdict` は古いまま `continue` でカウンタも増えず、
+永久に押し戻され続ける。そこで進捗フィンガープリント（`inner`/`outer`・`done` 件数・
+`harness_report.json` の mtime）を `.test_loop/stop_gate.json` に記録し、変化が無い押し戻しが
+3 回続いたら関所を解除して制御を返す（`TEST_LOOP_NO_PROGRESS_MAX`）。セッション通算 60 回でも解除
+（`TEST_LOOP_TOTAL_MAX`）。一時的に無効化するなら `TEST_LOOP_STOP_GATE=0`。
+
+**フェイルオープン方針**: 例外・パース失敗・ステート破損はすべて「通す」に倒す（他フックと同方針）。
+
+---
+
+## これらのフックが対象にしていないこと
 
 - 「どのスキル/エージェントを呼ぶべきか」というタスクの意味的な判断はhooksでは強制できない
   （hooksはツール呼び出しイベントに対する機械的なパターン検知しかできない）。
@@ -113,6 +163,9 @@ Edit/Writeで指定されたファイルパスの拡張子・ファイル名が 
 | `.claude/settings.json` | hooks・permissionsの設定本体 |
 | `scripts/hooks/block_direct_flutter_test.sh` | Bash用フック（`fvm flutter test` / `flutter test` 直叩き禁止） |
 | `scripts/hooks/require_test_loop_skill.sh` | Agent/Task用フック（test-loop 未読込でのテストエージェント起動禁止） |
-| `scripts/hooks/block_generated_file_edit.sh` | Edit/Write用フック（生成ファイル編集禁止） |
+| `scripts/hooks/block_generated_file_edit.sh` | Edit/Write用フック（生成ファイル + `.test_loop/` の編集禁止） |
+| `scripts/hooks/require_test_loop_completion.py` | Stop用フック（Excel 生成まで終わらせるまでターン終了を拒否） |
+| `scripts/loop_state.py` | ループ回数・進捗・`completed_at` の管理と `compute_verdict()` |
 | `scripts/test_harness.sh` | テスト実行・カバレッジ計測ハーネス（直叩き禁止の代替手段） |
+| `scripts/gen_pipeline_svg.py` | `docs/images/test_pipeline_overview.svg` の生成元（SVG は直接編集しない） |
 | `docs/test_loop_pipeline.md` | テスト自動生成パイプライン全体の解説 |

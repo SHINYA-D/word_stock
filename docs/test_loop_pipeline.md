@@ -128,6 +128,7 @@ Agentツールで起動する。プロンプトには対象ファイルパス1�
 `.test_loop/state.json` は **ユーザーの1依頼＝1セッション**のスコープ。
 
 1. 仕上げ工程の最後に `loop_state.py end-session` で明示的に破棄する
+   （`completed_at` が立っていないと拒否される。緊急時のみ `--force`）
 2. 破棄し忘れても `created_at` から24時間（`LOOP_SESSION_TTL_HOURS`）で自動破棄される
 
 寿命を超えて `done` が残らないので、実装を変更した後に古い `done` でスキップされる事故が起きない。
@@ -161,6 +162,10 @@ Agentツールで起動する。プロンプトには対象ファイルパス1�
 **11. セッション破棄**
 `python3 scripts/loop_state.py end-session` で `.test_loop/state.json` を破棄する。
 Excel が `production_bugs` を読むため、必ず手順10の後に実行する。
+
+手順10 が成功すると `gen_test_excel.py` が `completed_at` / `excel_path` を state に記録する。
+`completed_at` が無いまま `end-session` を打つと拒否される（手順10 を飛ばして工程を畳めないようにする関所）。
+Stop フック `scripts/hooks/require_test_loop_completion.py` も同じ `completed_at` を解除条件にしている。
 
 → 完了後、最終報告フォーマット（`.claude/skills/test-loop/SKILL.md` 参照）で報告する。
 

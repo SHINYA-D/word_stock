@@ -478,7 +478,65 @@ def map_status_to_result(status: str) -> str:
     return "未実施"
 
 
-def build_test_item_sheet(ws, files, id_prefix: str, sheet_title: str, generated_at: str):
+def _norm_name(s: str) -> str:
+    """テスト名の突き合わせ用に空白を落とした形にそろえる。"""
+    return re.sub(r"\s+", "", s or "")
+
+
+def build_failure_index(report):
+    """harness_report.json の失敗テストを項目書と突き合わせられる形にする。
+
+    項目書の「状態」列はテストを書いた時点の自己申告なので、それだけを見ると
+    実行して落ちたケースが OK のまま出てしまう（要確認一覧とのズレ）。
+    ここで拾った失敗を find_failure() で各ケースに当てて結果列を NG に上書きする。
+    """
+    out = []
+    for fl in (report or {}).get("tests", {}).get("failures", []):
+        name = _norm_name(fl.get("name", ""))
+        if not name:
+            continue
+        test_file = fl.get("file", "")
+        out.append({
+            "stem": _stem(test_file) if test_file else "",
+            "name": name,
+            "file": test_file,
+            "message": (fl.get("message") or "").strip(),
+        })
+    return out
+
+
+def find_failure(fi, case, failures):
+    """項目書の1ケースに対応する失敗があれば返す（無ければ None）。
+
+    ハーネスのテスト名は `group 名 + テスト名` の連結になるため完全一致では拾えない。
+    どちらかがもう一方を含むかで判定し、別ファイルの同名ケースを誤って NG に
+    しないようテストファイル名（stem）でも絞る。
+    """
+    case_name = _norm_name(case.get("name", ""))
+    if len(case_name) < 4:  # 短すぎる名前は誤マッチしやすいので突き合わせない
+        return None
+    target_stem = _stem(fi.get("target", ""))
+    candidates = []
+    for fl in failures:
+        if fl["stem"] and target_stem and fl["stem"] != target_stem:
+            continue
+        if case_name in fl["name"] or fl["name"] in case_name:
+            candidates.append(fl)
+    if not candidates:
+        return None
+    if len(candidates) > 1:
+        # 同一ファイル内でテスト名が同じケース（例: signInWithEmail 版と
+        # signInWithGoogle 版）は、項目書の「対象メソッド」列で絞り込む。
+        method = _norm_name(re.sub(r"\(.*$", "", case.get("method") or ""))
+        if method:
+            narrowed = [fl for fl in candidates if method in fl["name"]]
+            if narrowed:
+                candidates = narrowed
+    return candidates[0]
+
+
+def build_test_item_sheet(ws, files, id_prefix: str, sheet_title: str, generated_at: str,
+                          failures=None):
     ws.sheet_view.showGridLines = False
 
     col_widths = {
@@ -528,12 +586,18 @@ def build_test_item_sheet(ws, files, id_prefix: str, sheet_title: str, generated
             id_no = case_no.zfill(3) if case_no.isdigit() else case_no
             test_id = f"{id_prefix}-{slug}-{id_no}"
             result = map_status_to_result(case["status"])
+            # ハーネスの実行結果が最優先。MD の「状態」列は自己申告なので上書きする。
+            failure = find_failure(fi, case, failures) if failures else None
+            remark = ""
+            if failure:
+                result = "NG"
+                remark = "ハーネス実行で失敗: " + failure["message"].replace("\n", " ")[:300]
             jissha = "自動(harness)" if result != "未実施" else ""
             jisshibi = generated_at if result != "未実施" else ""
             row_vals = [
                 no, test_id, fi["class"] or fi["target"], case["method"],
                 case["category"], case["name"], case["prereq"], case["input"],
-                case["steps"], case["expected"], jisshibi, jissha, result, "",
+                case["steps"], case["expected"], jisshibi, jissha, result, remark,
             ]
             for i, val in enumerate(row_vals, start=1):
                 align = WRAP_CENTER_H if i in center_cols else WRAP_TOP
@@ -542,6 +606,10 @@ def build_test_item_sheet(ws, files, id_prefix: str, sheet_title: str, generated
             fill = CATEGORY_FILL.get(case["category"])
             if fill:
                 ws.cell(row=r, column=5).fill = fill
+            if result == "NG":
+                for i in (13, 14):
+                    ws.cell(row=r, column=i).fill = RED_FILL
+                ws.cell(row=r, column=13).font = RED_FONT
             ws.row_dimensions[r].height = 30
             r += 1
 
@@ -850,18 +918,39 @@ def main() -> int:
     build_guideline_sheet(wb)
     build_summary_sheet(wb.create_sheet("サマリ"), files, report, warnings)
     build_warning_sheet(wb.create_sheet("要確認一覧"), warnings)
+    failures = build_failure_index(report)
     build_test_item_sheet(wb.create_sheet("単体テスト項目書"),
                           [f for f in files if f["kind"] == "単体"], "UT", "単体テスト項目書",
-                          generated_at)
+                          generated_at, failures)
     build_test_item_sheet(wb.create_sheet("Widgetテスト項目書"),
                           [f for f in files if f["kind"] == "Widget"], "WT", "Widgetテスト項目書",
-                          generated_at)
+                          generated_at, failures)
     build_offtarget_sheet(wb.create_sheet("対象外一覧"), files, report)
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     wb.save(args.out)
+
+    # 保存に成功した場合のみ工程完了を記録する（wb.save が例外を投げればここには来ない）。
+    # これが Stop フックの解除条件と end-session の許可条件を兼ねるため、
+    # 「Excel の実在」と「記録」が必ず同一処理で結ばれるようにここに置く。
+    loop_state.mark_completed(os.path.abspath(args.out))
+
     print(f"✅ {args.out}")
     print(f"   項目書 {len(files)} 件 / テストケース {total_cases} 件")
+    if failures:
+        ng_cases = 0
+        matched = set()
+        for fi in files:
+            for case in fi["cases"]:
+                fl = find_failure(fi, case, failures)
+                if fl is not None:
+                    ng_cases += 1
+                    matched.add(id(fl))
+        print(f"   ハーネスの失敗 {len(failures)} 件 "
+              f"→ 項目書の {ng_cases} ケースを NG に反映")
+        for fl in failures:
+            if id(fl) not in matched:
+                print(f"   ⚠ 項目書に対応ケースが見つからない失敗: {fl['file']} :: {fl['name']}")
     red_kinds = {k for k, red in WARNING_KINDS if red}
     print(f"   要確認 {len(warnings)} 件"
           f"（うち赤字 {sum(1 for w in warnings if w['kind'] in red_kinds)} 件）")

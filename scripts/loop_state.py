@@ -87,6 +87,9 @@ def _new_state() -> dict:
         "done": [],
         "skipped": {},
         "production_bugs": [],
+        "completed_at": None,
+        "excel_path": None,
+        "scope": None,
     }
 
 
@@ -142,6 +145,9 @@ def load_state(path: str = STATE_PATH, *, create: bool = True) -> dict:
     state.setdefault("skipped", {})
     state.setdefault("production_bugs", [])
     state.setdefault("current", None)
+    state.setdefault("completed_at", None)
+    state.setdefault("excel_path", None)
+    state.setdefault("scope", None)
     return state
 
 
@@ -174,6 +180,7 @@ def begin_attempt(target: str, path: str = STATE_PATH) -> dict:
     state["inner"][target] = 0
     state["current"] = target
     save_state(state, path)
+    widen_scope(target, path)
     return state
 
 
@@ -208,6 +215,58 @@ def finish(target: str, status: str, reason: str = "",
 def add_bug(bug: dict, path: str = STATE_PATH) -> dict:
     state = load_state(path)
     state["production_bugs"].append(bug)
+    save_state(state, path)
+    return state
+
+
+def set_scope(targets: list[str] | None, path: str = STATE_PATH) -> dict:
+    """このセッションで扱う対象ファイルを限定する（部分依頼のとき）。
+
+    `None` / 空リスト = 全対象（`harness_report.is_target()` の全件）。
+    ユーザーが「この2ファイルだけテストして」と依頼した場合にここへ記録すると、
+    Stop フックが「残り48件やれ」と押し戻すのを防げる。
+
+    ユーザーの依頼内容そのものなので機構化はできない（LLM が宣言する）。
+    ただし限定した事実は Excel と最終報告に出るため、意図せぬ範囲の絞り込みは
+    ユーザーが目視で気づける。
+    """
+    state = load_state(path)
+    state["scope"] = sorted({t.replace("\\", "/") for t in targets}) if targets else None
+    save_state(state, path)
+    return state
+
+
+def widen_scope(target: str, path: str = STATE_PATH) -> None:
+    """scope 限定中に範囲外の対象へ着手したら、その対象を scope に加える。
+
+    scope と実際の作業がずれて「終われない / 終わりすぎる」のを防ぐ。
+    """
+    state = load_state(path)
+    scope = state.get("scope")
+    if scope is None:
+        return
+    t = target.replace("\\", "/")
+    if t not in scope:
+        state["scope"] = sorted(set(scope) | {t})
+        save_state(state, path)
+
+
+def mark_completed(excel_path: str, path: str = STATE_PATH) -> dict:
+    """Excel 項目書の生成完了を記録する（gen_test_excel.py が保存直後に呼ぶ）。
+
+    `completed_at` が立っているかどうかが「テスト工程をやり切ったか」の唯一の
+    機械的な証拠であり、
+
+    * Stop フック（scripts/hooks/require_test_loop_completion.py）の解除条件
+    * `end-session` を許可する条件
+
+    の両方がこれを見る。`record_run()` と同じく **成果物を作った本人が記録する**
+    のが要点で、`wb.save()` が成功しなければこの関数には到達しない。
+    手で書き込む経路は block_generated_file_edit.sh が塞いでいる。
+    """
+    state = load_state(path)
+    state["completed_at"] = _now().isoformat()
+    state["excel_path"] = excel_path
     save_state(state, path)
     return state
 
@@ -544,9 +603,18 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("start-session", help="セッションを開始する（既にあれば継続）")
+    p = sub.add_parser("start-session", help="セッションを開始する（既にあれば継続）")
+    p.add_argument("--scope", nargs="+", default=None,
+                   help="このセッションで扱う対象を限定する（部分依頼のとき）。"
+                        "未指定なら全対象。例: --scope lib/core/utils/a.dart lib/b.dart")
+
+    p = sub.add_parser("scope", help="セッション途中で対象範囲を設定/解除する")
+    p.add_argument("targets", nargs="*",
+                   help="限定する lib パス。省略すると全対象に戻す")
     sub.add_parser("show", help="現在のステートを表示する")
-    sub.add_parser("end-session", help="ステートを破棄する")
+    p = sub.add_parser("end-session", help="ステートを破棄する（Excel 生成後のみ）")
+    p.add_argument("--force", action="store_true",
+                   help="Excel 未生成でも破棄する（緊急脱出用。通常は使わない）")
 
     p = sub.add_parser("begin-attempt", help="外部ループを1周進める（内部は0にリセット）")
     p.add_argument("target")
@@ -576,7 +644,21 @@ def main() -> int:
     if args.cmd == "start-session":
         state = load_state()
         save_state(state)
+        if args.scope:
+            state = set_scope(args.scope)
         print(f"session_id: {state['session_id']}（created_at: {state['created_at']}）")
+        scope = state.get("scope")
+        print(f"  対象範囲: {'全対象' if not scope else f'{len(scope)} ファイル限定'}")
+        for t in scope or []:
+            print(f"    - {t}")
+        return 0
+
+    if args.cmd == "scope":
+        state = set_scope(args.targets or None)
+        scope = state.get("scope")
+        print(f"対象範囲: {'全対象に戻しました' if not scope else f'{len(scope)} ファイルに限定'}")
+        for t in scope or []:
+            print(f"  - {t}")
         return 0
 
     if args.cmd == "show":
@@ -587,7 +669,35 @@ def main() -> int:
         return 0
 
     if args.cmd == "end-session":
-        print("セッションを破棄しました" if clear_state() else "破棄するセッションはありません")
+        if not os.path.exists(STATE_PATH) and not os.path.exists(LEGACY_STATE_PATH):
+            print("破棄するセッションはありません")
+            return 0
+
+        state = load_state(create=False)
+        completed = state.get("completed_at")
+
+        # Excel 未生成のまま工程を畳むのを防ぐ関所。
+        # Stop フックは「state.json が無ければ通す」分岐を持たざるを得ない
+        # （テスト工程外で暴発させないため）ので、ここを塞がないと
+        # 「end-session を打てば終われる」という近道が残ってしまう。
+        if not completed and not args.force:
+            print(
+                "Excel 項目書がまだ生成されていないため、セッションを破棄できません。\n"
+                "SKILL.md 手順10 を先に実行してください:\n"
+                "  Agent ツールで test-doc-excel-generator を起動する\n"
+                "  （直接なら python3 scripts/gen_test_excel.py）\n"
+                "生成が成功すると completed_at が記録され、このコマンドが通るようになります。\n"
+                "どうしても破棄が必要な場合のみ --force を付けてください。",
+                file=sys.stderr,
+            )
+            return 1
+
+        if args.force and not completed:
+            print("⚠ Excel 未生成のまま --force で破棄します", file=sys.stderr)
+
+        clear_state()
+        print("セッションを破棄しました"
+              + (f"（Excel: {state.get('excel_path')}）" if completed else "（--force）"))
         return 0
 
     if args.cmd == "begin-attempt":

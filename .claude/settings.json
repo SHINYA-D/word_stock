@@ -1,8 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(*)",
-      "Read(*)"
+      "Bash",
+      "Glob",
+      "Grep",
+      "Read(//Users/a12345/StudioProjects/word_stock/**)",
+      "Edit(//Users/a12345/StudioProjects/word_stock/**)",
+      "Write(//Users/a12345/StudioProjects/word_stock/**)",
+      "Read(//private/tmp/claude-501/**)",
+      "Edit(//private/tmp/claude-501/**)",
+      "Write(//private/tmp/claude-501/**)",
+      "Read(//tmp/claude-501/**)",
+      "Edit(//tmp/claude-501/**)",
+      "Write(//tmp/claude-501/**)"
     ],
     "deny": [
       "Read(.env*)",
@@ -15,20 +25,31 @@
       "Read(**/*.p12)",
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",
-      "Bash(curl *)",
-      "Bash(wget *)",
-      "Bash(sudo *)",
-      "Bash(rm -rf *)",
-      "Bash(git push --force *)",
-      "Bash(git push -f *)",
-      "Bash(cat .env*)",
-      "Bash(cat **/google-services.json)",
-      "Bash(cat **/key.properties)",
+      "Bash(sudo:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(cat .env:*)",
       "Bash(printenv)",
       "Bash(env)"
     ],
     "ask": [
-      "Bash(git push *)"
+      "Bash(rm -rf:*)",
+      "Bash(git push:*)",
+      "Bash(git remote:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh release:*)",
+      "Bash(firebase:*)",
+      "Bash(flutterfire:*)",
+      "Bash(gcloud:*)",
+      "Bash(gsutil:*)",
+      "Bash(bq:*)",
+      "Bash(aws:*)",
+      "Bash(stripe:*)",
+      "Bash(npm publish:*)",
+      "Bash(curl:*)",
+      "Bash(wget:*)",
+      "Bash(ssh:*)",
+      "Bash(scp:*)"
     ]
   },
   "hooks": {
@@ -60,6 +81,17 @@
             "type": "command",
             "command": "bash scripts/hooks/block_generated_file_edit.sh",
             "statusMessage": "生成ファイルへの変更でないか確認中..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 scripts/hooks/require_test_loop_completion.py",
+            "statusMessage": "テスト工程が完了しているか確認中..."
           }
         ]
       }

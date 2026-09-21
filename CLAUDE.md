@@ -93,7 +93,13 @@ fvm flutter run --dart-define=USE_MOCKS=true
 - テスト実行・カバレッジ計測は `fvm flutter test` の直叩きではなく `bash scripts/test_harness.sh [<path>]` 経由で行う
 - **ループの継続/終了は自分で判断せず、回数も数えない。** `harness_report.json` の `loop.verdict`
   （`scripts/loop_state.py` が算出）に従う。内部・外部のループ回数は `.test_loop/state.json` で
-  スクリプトが管理する（手で編集しない。1依頼＝1セッションで `end-session` / TTL 24h により破棄）
+  スクリプトが管理する（手で編集しない＝`.test_loop/` への Edit/Write はフックが拒否する。
+  1依頼＝1セッションで `end-session` / TTL 24h により破棄）
+- **テスト工程は Excel 生成まで機構で強制される。** Stop フック
+  （`scripts/hooks/require_test_loop_completion.py`）が、`.test_loop/state.json` に
+  `completed_at` が立つまでターンの終了を拒否する。`completed_at` は
+  `gen_test_excel.py` が Excel の保存に成功したときにのみ記録され、
+  `end-session` も同じ条件を要求する（緊急脱出は `end-session --force`）
 - 項目書の `## 対象外` は `- L142-145：理由` のように**行番号を付ける**。ハーネスが lcov の
   未カバー行と照合して「理由あり」を判定するため
 - 項目書 Excel は `.claude/agents/test-doc-excel-generator` が `scripts/gen_test_excel.py` 経由で

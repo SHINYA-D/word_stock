@@ -43,13 +43,15 @@ Tier 一覧は消化順の目安。テストがあるべきファイルの正式
 **JSON を直接編集しない。回数を自分で数えない。** 必ずコマンド経由で操作する。
 
 ```bash
+python3 scripts/loop_state.py start-session --scope <lib パス...>  # 部分依頼のとき範囲を宣言
+python3 scripts/loop_state.py scope <lib パス...>        # 途中で範囲を設定（引数なしで全対象）
 python3 scripts/loop_state.py begin-attempt <lib パス>   # 外部ループ1周（内部カウンタはリセット）
 python3 scripts/loop_state.py finish <lib パス> --status done
 python3 scripts/loop_state.py finish <lib パス> --status skipped --reason "プロダクションコードのバグ"
 python3 scripts/loop_state.py bug --path lib/... --line 42 --symptom "症状" \
         --evidence "失敗したテスト名" --recommendation "推奨対応"
 python3 scripts/loop_state.py show                       # 現在の状態を確認
-python3 scripts/loop_state.py end-session                # セッション破棄（手順10の後）
+python3 scripts/loop_state.py end-session                # セッション破棄（手順10の後のみ通る）
 ```
 
 TodoWrite でも Tier 一覧を可視化する。
@@ -73,6 +75,13 @@ TodoWrite でも Tier 一覧を可視化する。
 
 ## 1 対象あたりのループ
 
+0. **範囲宣言（部分依頼のときだけ）**: ユーザーが特定のファイルだけを依頼した場合、
+   最初に対象範囲を宣言する。宣言しないと Stop フックが全対象の消化を要求する。
+   ```bash
+   python3 scripts/loop_state.py start-session --scope lib/a.dart lib/b.dart
+   ```
+   全体依頼（Tier 1〜4 をすべて回す）なら不要。途中で気づいた場合は
+   `python3 scripts/loop_state.py scope <lib パス...>`（引数なしで全対象に戻る）
 1. **計画**: `loop_state.py show` の `done` に無い最上位 Tier の対象を1つ選ぶ
 2. **生成**: 対応エージェントを Agent ツールで起動（プロンプトに対象ファイルパス1つだけを渡す）
    - **起動の直前に** `python3 scripts/loop_state.py begin-attempt <lib パス>` を叩く
@@ -141,6 +150,8 @@ TodoWrite でも Tier 一覧を可視化する。
       一覧として渡す（`test/test_cases/` に残っている他ファイル分の既存項目書は Excel に含めない）
 11. **セッション破棄**: `python3 scripts/loop_state.py end-session`
     - Excel 生成が終わってから実行する（`production_bugs` を Excel が読むため）
+    - 手順10 が成功していないと**拒否される**（`completed_at` が立っていないため）。
+      先に手順10 をやり切ること。緊急脱出が必要なときだけ `--force`
     - 忘れても 24 時間で自動破棄されるが、明示的に消すのが正
 
 ## 最終報告フォーマット
@@ -172,11 +183,39 @@ TodoWrite でも Tier 一覧を可視化する。
 赤字区分（理由なし未達 / プロダクションコードのバグ / テスト失敗 / テスト漏れ）が 1 件でもあれば、
 報告の冒頭で件数を明示する。
 
-## /loop との併用
+## やり切りは Stop フックが強制する
 
-`/loop <このスキル名相当の指示>` で回す場合、1 回の起動で「1 対象のループ（手順1〜6）」を回し、
-`.test_loop/state.json` で状態を引き継ぐ。全 Tier done になったらレビュー工程（7〜11）を1回だけ実行して
-`/loop` を終了する。
+`/loop`（時間間隔で再実行）や `/goal`（Haiku が会話を読んで完了判定）は使わない。
+判定器は `loop_state.compute_verdict()` として既にあり、外部の評価モデルより正確なため。
 
-`/loop` はコンテキストを毎回捨てるが、ステートはファイルに残るので続きから再開できる。
-ただし**セッション（＝ユーザーの1依頼）を超えては残さない**。手順11の `end-session` で破棄すること。
+代わりに `scripts/hooks/require_test_loop_completion.py`（`Stop` フック）が、
+**ターンを終えようとする瞬間**に `compute_verdict()` を呼び、工程が残っていれば終了を拒否する。
+
+| 状態 | フックの挙動 |
+|------|-------------|
+| `.test_loop/state.json` が無い | 通す（テスト工程ではない） |
+| `completed_at` が立っている | 通す（Excel 生成済み＝工程完了） |
+| 進行中の対象の `verdict` が `continue` | 拒否。`reason` を次ターンの指示として返す |
+| `verdict` が `stop` なのに `finish` 未実行 | 拒否。手順6を促す |
+| 未消化の対象が残っている | 拒否。手順1へ戻す |
+| 全対象 done / skipped だが `completed_at` 無し | 拒否。手順7〜11 を促す |
+
+### 出口は `completed_at` ただ1つ
+
+`completed_at` は `gen_test_excel.py` が **Excel の保存に成功した直後にのみ**
+`loop_state.mark_completed()` で記録する（`record_run()` と同じ「成果物を作った本人が
+記録する」方式）。したがって関所を解除する手段は手順10 の完走しかない。
+
+- `.test_loop/` への Edit/Write は `block_generated_file_edit.sh` が拒否する（捏造不可）
+- `completed_at` が無いまま `end-session` を打っても拒否される（近道の封鎖）
+- 緊急脱出は `end-session --force`（警告が出る。通常は使わない）
+
+SKILL.md 冒頭の「大原則」はこの経路で機構化されている。
+
+無限ループ対策: ハーネスを回さず押し戻されただけ（＝進捗なし）が 3 回続くと関所を解除して
+制御を返す（`TEST_LOOP_NO_PROGRESS_MAX`）。セッション通算 60 回でも解除（`TEST_LOOP_TOTAL_MAX`）。
+上限（内部3/外部5）による打ち切りは `compute_verdict()` が最優先で判定するため、
+カウンタ経由の暴走は起きない。一時的に無効化するなら `TEST_LOOP_STOP_GATE=0`。
+
+ステートは**セッション（＝ユーザーの1依頼）を超えて残さない**。手順11の `end-session` で破棄すること
+（忘れても 24 時間の TTL で破棄され、同時にフックも解除される）。
