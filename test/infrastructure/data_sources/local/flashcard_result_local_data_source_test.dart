@@ -93,4 +93,35 @@ void main() {
       expect(results.map((r) => r.id), ['result-1']);
     });
   });
+
+  group('upsert', () {
+    test('存在しないIDでupsertした場合、新規レコードとして挿入される', () async {
+      await dataSource.upsert(makeResult('result-1', 'folder-1'),
+          userId: userId);
+
+      final results = await dataSource.findByUserId(userId);
+      expect(results.map((r) => r.id), ['result-1']);
+    });
+
+    test('既存IDでupsertした場合、レコードが置き換えられる（重複せず1件のまま）', () async {
+      await dataSource.insert(makeResult('result-1', 'folder-1'),
+          userId: userId);
+
+      final updated = FlashcardResult(
+        id: 'result-1',
+        folderId: 'folder-1',
+        totalCount: 20,
+        correctCount: 15,
+        date: DateTime(2024, 1, 1),
+        updatedAt: DateTime(2024, 2, 2),
+      );
+      await dataSource.upsert(updated, userId: userId);
+
+      final results = await dataSource.findByUserId(userId);
+      expect(results.length, 1);
+      expect(results.first.totalCount, 20);
+      expect(results.first.correctCount, 15);
+      expect(results.first.updatedAt, DateTime(2024, 2, 2));
+    });
+  });
 }

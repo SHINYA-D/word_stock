@@ -114,6 +114,310 @@ void main() {
         userId: userId,
       );
 
+  Future<List<Map<String, dynamic>>> queueRowsFor(
+    String tableName,
+    String recordId,
+    String operation,
+  ) async {
+    final db = await dbHelper.database;
+    return db.query(
+      SyncQueueTable.tableName,
+      where: 'table_name = ? AND record_id = ? AND operation = ?',
+      whereArgs: [tableName, recordId, operation],
+    );
+  }
+
+  group('getFolders', () {
+    test('親フォルダIDを指定した場合、その配下のフォルダ一覧がローカルDBから取得できる', () async {
+      await insertFolder('root');
+      await insertFolder('child-1', parentFolderId: 'root');
+      await insertFolder('child-2', parentFolderId: 'root');
+      await insertFolder('other-root');
+
+      final result = await repository.getFolders(
+        userId: userId,
+        parentFolderId: 'root',
+      );
+
+      expect(result.isRight(), isTrue);
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (folders) =>
+            expect(folders.map((f) => f.id).toSet(), {'child-1', 'child-2'}),
+      );
+    });
+
+    test('該当するフォルダが存在しない場合、空リストが返る', () async {
+      final result = await repository.getFolders(userId: userId);
+
+      expect(result.isRight(), isTrue);
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (folders) => expect(folders, isEmpty),
+      );
+    });
+
+    test('ローカルDBアクセスで例外が発生した場合、Failure.unknownが返る', () async {
+      final db = await dbHelper.database;
+      await db.execute('DROP TABLE ${FolderTable.tableName}');
+
+      final result = await repository.getFolders(userId: userId);
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, isA<UnknownFailure>()),
+        (_) => fail('Left が返るはず'),
+      );
+
+      // 後続テストに影響しないようテーブルを復元する。
+      await FolderTable.onCreate(db);
+    });
+  });
+
+  group('createFolder - オンライン時', () {
+    test('フォルダを作成した場合、ローカル・リモート双方にsynced状態で保存される', () async {
+      final result = await repository.createFolder(
+        userId: userId,
+        name: 'new-folder',
+        parentFolderId: 'root',
+      );
+
+      expect(result.isRight(), isTrue);
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (folder) {
+          expect(folder.name, 'new-folder');
+          expect(folder.parentFolderId, 'root');
+          expect(folder.createdAt, folder.updatedAt);
+        },
+      );
+
+      final id = result.match((_) => fail('Right が返るはず'), (f) => f.id);
+      expect(await folderLocal.findById(id), isNotNull);
+      expect(fakeRemote.writtenFolders, hasLength(1));
+      expect(fakeRemote.writtenFolders.single.userId, userId);
+    });
+
+    test('リモート書き込みでFirebaseExceptionが発生した場合、Failure.networkが返る', () async {
+      fakeRemote.exceptionToThrow = FirebaseException(
+        plugin: 'firestore',
+        code: 'unavailable',
+      );
+
+      final result = await repository.createFolder(
+        userId: userId,
+        name: 'new-folder',
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, const Failure.network()),
+        (_) => fail('Left が返るはず'),
+      );
+    });
+
+    test('リモート書き込みで未知のFirebaseExceptionが発生した場合、Failure.unknownが返る', () async {
+      fakeRemote.exceptionToThrow = FirebaseException(
+        plugin: 'firestore',
+        code: 'permission-denied',
+        message: 'denied',
+      );
+
+      final result = await repository.createFolder(
+        userId: userId,
+        name: 'new-folder',
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, const Failure.unknown('denied')),
+        (_) => fail('Left が返るはず'),
+      );
+    });
+
+    test('ローカル書き込みで想定外の例外が発生した場合、Failure.unknownが返る', () async {
+      final db = await dbHelper.database;
+      await db.execute('DROP TABLE ${FolderTable.tableName}');
+
+      final result = await repository.createFolder(
+        userId: userId,
+        name: 'new-folder',
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, isA<UnknownFailure>()),
+        (_) => fail('Left が返るはず'),
+      );
+
+      // 後続テストに影響しないようテーブルを復元する。
+      await FolderTable.onCreate(db);
+    });
+  });
+
+  group('createFolder - オフライン時', () {
+    setUp(() {
+      fakeConnectivity.setOnline(false);
+    });
+
+    test('フォルダを作成した場合、ローカルにpending状態で保存されsync_queueにcreate登録される', () async {
+      final result = await repository.createFolder(
+        userId: userId,
+        name: 'new-folder',
+      );
+
+      expect(result.isRight(), isTrue);
+      final id = result.match((_) => fail('Right が返るはず'), (f) => f.id);
+
+      expect(await folderLocal.findById(id), isNotNull);
+      expect(
+        await queueRowsFor(FolderTable.tableName, id, 'create'),
+        hasLength(1),
+      );
+      expect(fakeRemote.writtenFolders, isEmpty);
+    });
+  });
+
+  group('updateFolder - オンライン時', () {
+    test('既存フォルダを更新した場合、createdAtとparentFolderIdは維持されnameとupdatedAtが更新される',
+        () async {
+      final createdAt = DateTime(2023, 5, 1);
+      await folderLocal.insert(
+        Folder(
+          id: 'folder-1',
+          name: 'old-name',
+          parentFolderId: 'root',
+          createdAt: createdAt,
+          updatedAt: createdAt,
+        ),
+        userId: userId,
+      );
+
+      final result = await repository.updateFolder(
+        userId: userId,
+        folderId: 'folder-1',
+        name: 'new-name',
+      );
+
+      expect(result.isRight(), isTrue);
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (folder) {
+          expect(folder.name, 'new-name');
+          expect(folder.parentFolderId, 'root');
+          expect(folder.createdAt, createdAt);
+          expect(folder.updatedAt.isAfter(createdAt), isTrue);
+        },
+      );
+      expect(fakeRemote.writtenFolders, hasLength(1));
+    });
+
+    test('存在しないフォルダIDを指定した場合、createdAtに現在時刻が使われparentFolderIdはnullになる',
+        () async {
+      final result = await repository.updateFolder(
+        userId: userId,
+        folderId: 'not-exist',
+        name: 'new-name',
+      );
+
+      expect(result.isRight(), isTrue);
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (folder) {
+          expect(folder.parentFolderId, isNull);
+          expect(folder.createdAt, folder.updatedAt);
+        },
+      );
+    });
+
+    test('リモート書き込みでFirebaseExceptionが発生した場合、Failure.networkが返る', () async {
+      await insertFolder('folder-1');
+      fakeRemote.exceptionToThrow = FirebaseException(
+        plugin: 'firestore',
+        code: 'network-request-failed',
+      );
+
+      final result = await repository.updateFolder(
+        userId: userId,
+        folderId: 'folder-1',
+        name: 'new-name',
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, const Failure.network()),
+        (_) => fail('Left が返るはず'),
+      );
+    });
+
+    test('リモート書き込みで未知のFirebaseExceptionが発生した場合、Failure.unknownが返る', () async {
+      await insertFolder('folder-1');
+      fakeRemote.exceptionToThrow = FirebaseException(
+        plugin: 'firestore',
+        code: 'permission-denied',
+        message: 'denied',
+      );
+
+      final result = await repository.updateFolder(
+        userId: userId,
+        folderId: 'folder-1',
+        name: 'new-name',
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, const Failure.unknown('denied')),
+        (_) => fail('Left が返るはず'),
+      );
+    });
+
+    test('ローカル更新で想定外の例外が発生した場合、Failure.unknownが返る', () async {
+      await insertFolder('folder-1');
+      final db = await dbHelper.database;
+      await db.execute('DROP TABLE ${FolderTable.tableName}');
+
+      final result = await repository.updateFolder(
+        userId: userId,
+        folderId: 'folder-1',
+        name: 'new-name',
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, isA<UnknownFailure>()),
+        (_) => fail('Left が返るはず'),
+      );
+
+      // 後続テストに影響しないようテーブルを復元する。
+      await FolderTable.onCreate(db);
+    });
+  });
+
+  group('updateFolder - オフライン時', () {
+    setUp(() {
+      fakeConnectivity.setOnline(false);
+    });
+
+    test('フォルダを更新した場合、ローカルがpending状態で更新されsync_queueにupdate登録される', () async {
+      await insertFolder('folder-1');
+
+      final result = await repository.updateFolder(
+        userId: userId,
+        folderId: 'folder-1',
+        name: 'new-name',
+      );
+
+      expect(result.isRight(), isTrue);
+      final updated = await folderLocal.findById('folder-1');
+      expect(updated?.name, 'new-name');
+      expect(
+        await queueRowsFor(FolderTable.tableName, 'folder-1', 'update'),
+        hasLength(1),
+      );
+      expect(fakeRemote.writtenFolders, isEmpty);
+    });
+  });
+
   group('deleteFolder - オンライン時', () {
     test(
         '子フォルダ・単語・成績データを持たない単一フォルダを削除した場合、'
