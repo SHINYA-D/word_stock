@@ -30,8 +30,8 @@
 |---------|---------------------|------|
 | `Stop` | `require_test_loop_completion.py` | テスト工程を Excel 生成まで終わらせるまでターンを終了させない |
 
-図解: [images/hooks_overview.svg](images/hooks_overview.svg)（フック単体）/
-[images/test_pipeline_overview.svg](images/test_pipeline_overview.svg)（テスト工程のどこで発火するか）
+図解: [images/hooks_overview.svg](../images/hooks_overview.svg)（フック単体）/
+[images/test_pipeline_overview.svg](../images/test_pipeline_overview.svg)（テスト工程のどこで発火するか）
 
 ---
 
@@ -121,7 +121,7 @@ Edit/Writeで指定されたファイルパスの拡張子・ファイル名が 
 | 全対象 done だが `completed_at` 無し | 拒否。手順7〜11を促す |
 
 **なぜ必要か**:
-二重ループ（内部3回・外部5回）は「回しすぎ」の上限であって、「あと1回回せ」を強制する力がない。
+二重ループ（内部3回・外部3回）は「回しすぎ」の上限であって、「あと1回回せ」を強制する力がない。
 `loop.verdict` が `continue` でも、ループを次の周に進める主体は LLM なので、途中でユーザーに
 制御を返してしまえばそこで工程が終わる。Stop フックは LLM が止まろうとする瞬間に割り込める
 唯一のタイミングで、ここに既存の `loop_state.compute_verdict()` を置くことで、自然言語のお願いを
@@ -168,4 +168,4 @@ Edit/Writeで指定されたファイルパスの拡張子・ファイル名が 
 | `scripts/loop_state.py` | ループ回数・進捗・`completed_at` の管理と `compute_verdict()` |
 | `scripts/test_harness.sh` | テスト実行・カバレッジ計測ハーネス（直叩き禁止の代替手段） |
 | `scripts/gen_pipeline_svg.py` | `docs/images/test_pipeline_overview.svg` の生成元（SVG は直接編集しない） |
-| `docs/test_loop_pipeline.md` | テスト自動生成パイプライン全体の解説 |
+| `docs/development/test_loop_pipeline.md` | テスト自動生成パイプライン全体の解説 |

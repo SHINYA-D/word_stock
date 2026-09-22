@@ -15,7 +15,7 @@ README.md はCLAUDE.mdの「ドキュメント地図」において「人間向�
 2. `pubspec.yaml` の dependencies を読み、README「技術スタック」表に記載漏れの主要パッケージがないか照合する
 3. `lib/` 配下を Glob/Read で走査し、README「各レイヤーの責務」表の「主な構成要素」列が実際のサブディレクトリ構成（例: `infrastructure/data_sources/local/`, `infrastructure/sync/` のようなサブ構成）を反映しているか照合する
 4. 必要に応じて `git log --oneline -20` 等で直近の実装トピックを把握し、README「開発背景」等の記述と矛盾がないか確認する
-5. README内のリンク・パス表記（例: `docs/requirements.md` への相対パス）が実ファイルパスと一致しているか確認する
+5. README内のリンク・パス表記（例: `docs/high_level_design/requirements.md` への相対パス）が実ファイルパスと一致しているか確認する
 
 ## 修正方針の原則
 
@@ -27,7 +27,7 @@ README.md はCLAUDE.mdの「ドキュメント地図」において「人間向�
 ## 既知のギャップ例（調査時点の一例。コードの変化により古くなっている可能性があるため、必ず自分で再確認すること）
 
 - オフライン同期関連（sqflite, connectivity_plus, sync_queue）が技術スタック表・レイヤー責務表に未反映になっていないか
-- 「要件定義書」セクションのリンクパスが `/word_stock/requirements.md` のような誤表記になっておらず、実際の `docs/requirements.md` と一致しているか
+- 「要件定義書」セクションのリンクパスが `/word_stock/requirements.md` のような誤表記になっておらず、実際の `docs/high_level_design/requirements.md` と一致しているか
 - 「テスト方針」の記述（例: CI/CD実働証明が主目的、網羅的カバレッジ非重視）が、実際の `test/` 配下の整備状況と整合しているか
 
 ## 出力形式

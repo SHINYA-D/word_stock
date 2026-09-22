@@ -46,7 +46,7 @@ UseCase レイヤーを設けることで、ビジネスロジックの独立性
 ### オフライン同期対応
 SQLite（sqflite）をローカルキャッシュとして導入し、UI層は常にSQLiteから読み取ることでオンライン/オフラインを意識しない設計にしています。
 書き込み時はデータテーブルへの反映と `sync_queue` テーブルへの同期予約を同一トランザクションで行い、`connectivity_plus` によるネットワーク監視と組み合わせて未送信データをFirestoreへ同期します。
-同期フロー・競合解決の詳細は [docs/online_offline.md](docs/online_offline.md) を参照してください。
+同期フロー・競合解決の詳細は [docs/high_level_design/online_offline.md](docs/high_level_design/online_offline.md) を参照してください。
 
 ### テスト方針
 本プロジェクトのテストは、CI/CD パイプラインの実働証明を主目的としています。
@@ -111,10 +111,10 @@ fvm flutter test
 ## 要件定義書
 コーディングに関するルールや設計方針は以下を参照してください。
 
-[docs/requirements.md](docs/requirements.md)
+[docs/high_level_design/requirements.md](docs/high_level_design/requirements.md)
 
 なお、上記要件定義書には「オンライン必須・ローカルキャッシュ不採用」という記載がありますが、これは作成時点の古い記述です。
-現在はオフライン同期対応へ移行中のため、最新の方針は [docs/online_offline.md](docs/online_offline.md) を参照してください。
+現在はオフライン同期対応へ移行中のため、最新の方針は [docs/high_level_design/online_offline.md](docs/high_level_design/online_offline.md) を参照してください。
 
 <details>
 <summary>環境構築手順（クリックで展開）</summary>

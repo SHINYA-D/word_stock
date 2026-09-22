@@ -130,12 +130,12 @@ sealed class Failure with _$Failure {
 - **読み取りは常にSQLiteから行う**。UI層はオン/オフラインを意識しない
 - DateTime ↔ String（ISO8601）の変換責任は `LocalDataSource` 層に集約する。それより上位の層は常に `DateTime` 型で扱う
 - SQLiteトランザクション内でFirestore通信を行わない
-- 同期フロー・競合解決・フェーズ計画の詳細は `docs/online_offline.md` を参照
+- 同期フロー・競合解決・フェーズ計画の詳細は `docs/high_level_design/online_offline.md` を参照
 
 ## 既知の矛盾（要注意）
 
-`docs/requirements.md` には「本アプリはオンライン必須。ローカルキャッシュ不採用」と書かれているが、これは古い記述。
-現在は `docs/online_offline.md` に従いオフライン同期対応へ移行中のため、**実装判断に迷ったら `docs/online_offline.md` を優先**すること。
+`docs/high_level_design/requirements.md` には「本アプリはオンライン必須。ローカルキャッシュ不採用」と書かれているが、これは古い記述。
+現在は `docs/high_level_design/online_offline.md` に従いオフライン同期対応へ移行中のため、**実装判断に迷ったら `docs/high_level_design/online_offline.md` を優先**すること。
 
 ## コミットルール
 
@@ -154,5 +154,7 @@ sealed class Failure with _$Failure {
 | ファイル | 役割 |
 |---------|------|
 | `README.md` | 人間向け説明（設計思想・技術選定理由・環境構築手順） |
-| `docs/requirements.md` | 元の要件定義書（一部オフライン関連の記述は古い） |
-| `docs/online_offline.md` | オフライン同期機能の実装指示書（フェーズ別タスク） |
+| `docs/high_level_design/requirements.md` | 元の要件定義書（一部オフライン関連の記述は古い） |
+| `docs/high_level_design/online_offline.md` | オフライン同期機能の実装指示書（フェーズ別タスク） |
+| `docs/detailed_design/**/*.md` | 機能ごとの振る舞い仕様書（詳細設計）。画面が主体なら `lib/presentation/` と同じ階層に Page と同じファイル名（`sample_page.md`）、画面が主体でなければ `docs/detailed_design/<機能名>/<機能名>.md` に置く。テストの期待値の根拠。書き方は `.claude/skills/spec-authoring/SKILL.md` |
+| `docs/development/common_principles.md` | 全画面共通の振る舞い原則。各仕様書から `原則-<番号>` で引用される |
