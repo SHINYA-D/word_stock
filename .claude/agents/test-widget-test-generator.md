@@ -36,9 +36,37 @@ CLAUDE.md の「## テスト方針」が最優先ルールです。
 
 **ロジック網羅を Widget テストで狙わないこと**（ViewModel 単体テストとの二重化を避ける）。
 
+## 仕様書（詳細設計書）が渡された場合
+
+プロンプトに仕様書のパスと担当する仕様 ID が渡されたら、**期待値は仕様書だけから作る**。
+
+- 担当は仕様書の3章（D / C / U / X / E と `kinds` の追加種別）と、2.2 のうち「守る層」が `画面` の ID。
+  4章（V）は担当しない（ViewModel 単体テストの担当。上のスコープ境界と同じ）
+- 対象 Page は「どう操作するか」（Widget の型・ボタンの種類・Provider 名）を知るためだけに読む。
+  画面の文言・振る舞いを見て期待値を決めない（バグがそのまま正解になるため）。文言は仕様書の「」内をそのまま `find.text()` に使う
+- 担当する仕様 ID の1件につき1件以上のテストケースを作る（上の「1ファイル5〜15ケース」の目安より優先する）
+- 仕様書の「条件」をテストの準備と操作に、「期待される動作」を `expect` に写す。
+  失敗の条件（`UnknownFailure` で失敗した 等）は、その Failure を返す Repository のスタブを
+  `buildWithMockRepositories` の `extra` で差し替えて作る
+- テスト名は「○○の場合、△△が起きる」形式のまま、末尾に仕様 ID を付ける（例: `…、AppBar に「サンプル」と表示される [SMP-D01]`）
+- 仕様どおりの期待値で落ちたテストは、**期待値をコードに合わせて直さない**。Page / ViewModel のバグとして報告する
+  - 残っている失敗が「仕様どおりの期待値で落ちたテスト」だけになったら、**ハーネスを再実行せずに結果報告して終える**
+    （テストを直す余地が無いのに再実行すると、内部上限まで回り続けるだけになる。バグの記録はメインが行う）
+- 2.2（N）の ID は、仕様書の「境界値」列の**値1つにつきテストケースを1件**作る（1件のテストに複数の値をまとめない）。
+  テスト名に値を書く（例: `…「a」×21 を入力した場合、入力欄は「a」×20 のまま [SMP-N01]`）。Dart では値の一覧を
+  ループして `test()` / `testWidgets()` を値ごとに登録してよい
+- 項目書のテスト名は、テストコードの `test()` / `testWidgets()` の説明文と**一字一句同じ**にする
+  （Excel はテスト名でハーネスの失敗と結び付けるため。ずれると NG が反映されない）
+- 仕様書が曖昧・矛盾していて期待値を決められない ID は、テストを書かずに結果報告の「仕様書の不備」に書く
+
+仕様書が渡されない場合は、従来どおり対象 Page からシナリオを設計する。
+
 ## 実行前に必ず確認すること
 
-1. `test/helpers/test_helpers.dart` の `buildWithMockRepositories({required child, extra})` のシグネチャとフィクスチャ
+0. （仕様書が渡された場合）仕様書を読み、担当する仕様 ID の条件と期待値を把握する
+
+1. `test/helpers/test_helpers.dart` の `buildWithMockRepositories({required child, extra})` のシグネチャとフィクスチャ。
+   `test/helpers/fake_infrastructure.dart` の共有 Fake（`FakeSampleRepository` 等）も確認し、同じ Fake をテストファイル内に作り直さない
 2. 近い既存テストを最低1つ読む（例: `test/presentation/result/result_page_test.dart`）
    - `ViewModel` を継承したサブクラスで `build()` を override し `.overrideWith(Subclass.new)` で状態注入するパターン
    - `lib/infrastructure/repositories/mock/Mock*Repository` の使い方
@@ -123,6 +151,11 @@ Page/ViewModel 実装側のバグと判断できる場合は、上限を待た�
 - テスト: X passed / Y failed
 ### 内訳
 - Loading: X / Success: Y / Error: Z / 操作: W / 合計: N
+### 仕様書との対応（仕様書が渡された場合）
+- 担当 ID N 件中 M 件をテスト済み（未テストの ID と理由: ...）
+- 仕様どおりの期待値で落ちたテスト: 仕様 ID / テスト名 / 今の画面の動作
+### 仕様書の不備
+- 仕様 ID … 曖昧・矛盾の内容
 ```
 
 失敗が Page/ViewModel 実装のバグと判断したら **修正せず報告のみ**。

@@ -301,6 +301,14 @@ def main() -> int:
         in_denominator=bool(loop_target) and loop_target in target_files,
     )
 
+    # ---- 仕様書との突き合わせ（警告のみ。合否・verdict には使わない） ------- #
+    if loop_target:
+        sc = loop_state.spec_coverage(loop_target)
+        report["spec"] = sc
+        warning = loop_state.format_spec_warning(sc) if sc else None
+        if warning:
+            report["loop"]["warnings"].append(warning)
+
     with open("coverage/harness_report.json", "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 

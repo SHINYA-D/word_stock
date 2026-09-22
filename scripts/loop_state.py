@@ -32,7 +32,7 @@ LLM は回数を数えず、`harness_report.json` の `loop.verdict` に従う�
 ## 環境変数
 
     LOOP_INNER_MAX           内部ループ上限（既定 3）
-    LOOP_OUTER_MAX           外部ループ上限（既定 5）
+    LOOP_OUTER_MAX           外部ループ上限（既定 3）
     LOOP_SESSION_TTL_HOURS   セッションの自動破棄時間（既定 24）
     LOOP_STATE_PATH          ステートファイルのパス（既定 .test_loop/state.json）
 """
@@ -50,7 +50,7 @@ from datetime import datetime, timedelta, timezone
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 INNER_MAX = int(os.environ.get("LOOP_INNER_MAX", "3"))
-OUTER_MAX = int(os.environ.get("LOOP_OUTER_MAX", "5"))
+OUTER_MAX = int(os.environ.get("LOOP_OUTER_MAX", "3"))
 TTL_HOURS = float(os.environ.get("LOOP_SESSION_TTL_HOURS", "24"))
 STATE_PATH = os.environ.get(
     "LOOP_STATE_PATH", os.path.join(REPO, ".test_loop", "state.json")
@@ -184,12 +184,31 @@ def begin_attempt(target: str, path: str = STATE_PATH) -> dict:
     return state
 
 
+def session_active(path: str = STATE_PATH) -> bool:
+    """test-loop のセッションが進行中か（ステートファイルがあり、TTL を過ぎていない）。"""
+    if not os.path.exists(path):
+        return False
+    try:
+        with open(path, encoding="utf-8") as f:
+            return not _expired(json.load(f))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
 def record_run(target: str, path: str = STATE_PATH) -> dict:
-    """ハーネス1実行を内部試行として記録する（harness_report.py が自動で呼ぶ）。"""
+    """ハーネス1実行を内部試行として記録する（harness_report.py が自動で呼ぶ）。
+
+    セッションが無いとき（test-loop の外で動作確認のためにハーネスを回したとき）は
+    何も記録せず、ステートファイルも作らない。作ると範囲「全対象」のセッションが
+    勝手に始まり、Stop フックが全 Tier の消化を要求してしまうため。
+    セッションは start-session / begin-attempt でだけ始まる。
+    """
+    if not session_active(path):
+        return load_state(path, create=False)
     state = load_state(path)
     state["inner"][target] = state["inner"].get(target, 0) + 1
     if not state["outer"].get(target):
-        # begin-attempt を経ずにハーネスが回った場合も外部1周目として扱う
+        # セッション中に begin-attempt を経ずにハーネスが回った場合も外部1周目として扱う
         state["outer"][target] = 1
     state["current"] = target
     save_state(state, path)
@@ -452,18 +471,293 @@ def reasoned_lines(target: str) -> tuple[set[int], bool, bool]:
 
 
 # --------------------------------------------------------------------------- #
+# 仕様書（詳細設計書）との突き合わせ
+# --------------------------------------------------------------------------- #
+# 仕様書の書き方は .claude/skills/spec-authoring/SKILL.md、テスト工程での使い方は
+# .claude/skills/test-loop/SKILL.md「詳細設計書（仕様書）との関係」が正。
+SPEC_DIR = os.path.join(REPO, "docs", "detailed_design")
+
+# `SMP-V17〜V19` / `SMP-V17〜SMP-V19` / `[SMP-D01]` / `SMP-C04, SMP-C06` を拾う
+_SPEC_ID_RE = re.compile(
+    r"([A-Z]{3})-([A-Z])(\d{2,})(?:\s*[〜~～]\s*(?:[A-Z]{3}-)?([A-Z])?(\d{2,}))?"
+)
+
+# 対象ファイルの種類 → (担当する章, 2.2 の「守る層」の先頭語)
+_SPEC_ROLES = [
+    (lambda p: p.endswith("_page.dart"), 3, "画面"),
+    (lambda p: p.endswith("_view_model.dart"), 4, "ViewModel"),
+    (lambda p: "/repositories/" in p, 5, "Repository"),
+    (lambda p: "/use_cases/" in p, 6, "UseCase"),
+]
+
+
+def expand_spec_ids(text: str) -> set[str]:
+    """文字列中の仕様 ID を集める。`SMP-V17〜V19` のような範囲は展開する。"""
+    out: set[str] = set()
+    for m in _SPEC_ID_RE.finditer(text or ""):
+        prefix, kind, start, kind2, end = m.groups()
+        width = len(start)
+        if end is None:
+            out.add(f"{prefix}-{kind}{start}")
+            continue
+        if kind2 and kind2 != kind:
+            # 種別をまたぐ範囲は両端だけ（範囲の意味が決まらないため）
+            out.add(f"{prefix}-{kind}{start}")
+            out.add(f"{prefix}-{kind2}{end}")
+            continue
+        for n in range(int(start), int(end) + 1):
+            out.add(f"{prefix}-{kind}{n:0{width}d}")
+    return out
+
+
+def boundary_value_count(cell: str) -> int:
+    """2.2 の「境界値」セルに並ぶ値の数（有効・無効の合計）。
+
+    `有効: v1 ／ v2 無効: v3` のように「／」で区切って並べる書式を数える。
+    2.2 の ID は境界値の数だけテストケースが必要（spec-authoring の規約）。
+    """
+    parts = re.split(r"(?:有効|無効)\s*[:：]", cell or "")
+    segments = parts[1:] if len(parts) > 1 else parts
+    return sum(
+        len([v for v in seg.split("／") if v.strip()]) for seg in segments
+    )
+
+
+def _read_frontmatter(text: str) -> dict:
+    m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+    if not m:
+        return {}
+    meta: dict = {"targets": []}
+    key = None
+    for line in m.group(1).splitlines():
+        item = re.match(r"^\s+-\s+(.+?)\s*$", line)
+        if item and key == "targets":
+            meta["targets"].append(item.group(1))
+            continue
+        kv = re.match(r"^([A-Za-z_]+):\s*(.*?)\s*$", line)
+        if kv:
+            key = kv.group(1)
+            if kv.group(2):
+                meta[key] = kv.group(2)
+    return meta
+
+
+def parse_spec(path: str) -> dict | None:
+    """仕様書から ID ごとの章・守る層・境界値の数・廃止かどうかを読む。
+
+    ID として数えるのは 2〜6章の表の**先頭列**だけ（7章「対象外」と8章「要確認事項」は除く。
+    4章の「対応する画面仕様」列のように他の ID を引用している列も除く）。
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return None
+    meta = _read_frontmatter(text)
+    prefix = meta.get("prefix", "")
+    if not prefix:
+        return None
+    items: dict[str, dict] = {}
+    chapter = 0
+    row_re = re.compile(rf"^\|\s*({re.escape(prefix)}-[A-Z]\d{{2,}})\s*\|")
+    for line in text.splitlines():
+        h = re.match(r"^##\s+(\d+)\.", line)
+        if h:
+            chapter = int(h.group(1))
+            continue
+        if not 2 <= chapter <= 6:
+            continue
+        m = row_re.match(line)
+        if not m:
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        item = {
+            "chapter": chapter,
+            "abolished": cells[-1] == "廃止",
+            "layer": "",
+            "boundary": 0,
+        }
+        if chapter == 2 and len(cells) >= 4:
+            item["layer"] = cells[2]
+            item["boundary"] = boundary_value_count(cells[3])
+        items[m.group(1)] = item
+    return {
+        "path": os.path.relpath(path, REPO).replace("\\", "/"),
+        "prefix": prefix,
+        "status": meta.get("status", ""),
+        "targets": meta.get("targets", []),
+        "items": items,
+    }
+
+
+def responsible_spec_ids(spec: dict, target: str) -> list[str]:
+    """対象ファイルが担当する仕様 ID（廃止を除く）。章ごとの振り分けは test-loop の規約どおり。"""
+    for match, chapter, layer in _SPEC_ROLES:
+        if match(target):
+            return sorted(
+                i for i, it in spec["items"].items()
+                if not it["abolished"] and (
+                    it["chapter"] == chapter
+                    or (it["chapter"] == 2 and it["layer"].startswith(layer))
+                )
+            )
+    return []
+
+
+def read_case_spec_ids(doc: str) -> tuple[str | None, list[dict]]:
+    """項目書 MD の `| 仕様書 |` 行と、テストケース一覧の各ケースの仕様 ID を読む。"""
+    try:
+        with open(doc, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return None, []
+    spec = None
+    m = re.search(r"^\|\s*仕様書\s*\|\s*(.+?)\s*\|\s*$", text, re.M)
+    if m:
+        spec = m.group(1).strip("` ")
+    cases: list[dict] = []
+    header = None
+    for line in text.splitlines():
+        if not line.strip().startswith("|"):
+            header = None
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if "テスト名" in cells:
+            header = cells
+            continue
+        if header is None or set(line.strip()) <= set("|-: "):
+            continue
+        row = dict(zip(header, cells))
+        cases.append({"name": row.get("テスト名", ""),
+                      "ids": expand_spec_ids(row.get("仕様ID", ""))})
+    return spec, cases
+
+
+def find_spec_for(target: str, doc_spec: str | None = None) -> dict | None:
+    """対象ファイルの承認済み仕様書。項目書の `| 仕様書 |` 行を優先し、
+    無ければ frontmatter の `targets` に対象（または対象を含むディレクトリ）が載る仕様書を探す。"""
+    candidates = []
+    if doc_spec:
+        candidates.append(os.path.join(REPO, doc_spec))
+    else:
+        candidates = glob.glob(os.path.join(SPEC_DIR, "**", "*.md"), recursive=True)
+    for path in candidates:
+        spec = parse_spec(path)
+        if not spec or spec["status"] != "approved":
+            continue
+        if doc_spec or any(
+            target == t or (t.endswith("/") and target.startswith(t))
+            for t in spec["targets"]
+        ):
+            return spec
+    return None
+
+
+def spec_coverage(target: str) -> dict | None:
+    """対象ファイルの仕様 ID の網羅状況。仕様書が無い対象は None。
+
+    - missing: 担当する仕様 ID のうち、どのテストケースからも引用されていないもの
+    - boundary_short: 2.2 の ID で、引用するテストケースが境界値の数より少ないもの
+    """
+    doc = doc_path_for(target)
+    doc_spec, cases = read_case_spec_ids(doc) if doc else (None, [])
+    spec = find_spec_for(target, doc_spec)
+    if not spec:
+        return None
+    required = responsible_spec_ids(spec, target)
+    cited: dict[str, int] = {}
+    for c in cases:
+        for i in c["ids"]:
+            cited[i] = cited.get(i, 0) + 1
+    boundary_short = [
+        {"id": i, "need": spec["items"][i]["boundary"], "have": cited.get(i, 0)}
+        for i in required
+        if spec["items"][i]["chapter"] == 2
+        and 0 < cited.get(i, 0) < spec["items"][i]["boundary"]
+    ]
+    return {
+        "target": target,
+        "spec": spec["path"],
+        "doc": os.path.relpath(doc, REPO).replace("\\", "/") if doc else None,
+        "required": required,
+        "cited": {i: cited.get(i, 0) for i in required},
+        "missing": [i for i in required if not cited.get(i)],
+        "boundary_short": boundary_short,
+        "boundary_need": {
+            i: spec["items"][i]["boundary"] for i in required
+            if spec["items"][i]["chapter"] == 2
+        },
+    }
+
+
+def format_spec_warning(sc: dict) -> str | None:
+    """ループ判定の warnings に載せる1行（問題が無ければ None）。合否には使わない。"""
+    parts = []
+    if sc["missing"]:
+        parts.append("テストの無い仕様 ID: " + ", ".join(sc["missing"]))
+    if sc["boundary_short"]:
+        parts.append("境界値のテストが足りない仕様 ID: " + ", ".join(
+            f"{b['id']}（{b['have']}/{b['need']} 件）" for b in sc["boundary_short"]))
+    return "仕様漏れ … " + " ／ ".join(parts) if parts else None
+
+
+def known_bug_failures(failures: list[dict], state: dict) -> list[dict]:
+    """記録済みのバグ（production_bugs）の仕様 ID だけで説明できる失敗。
+
+    テスト名の `[SMP-D01]` が、記録済みのバグの症状に書かれた仕様 ID にすべて含まれる失敗は
+    「仕様どおりの期待値で落ちた既知のバグ」なので、ループを回し続ける理由にならない。
+    """
+    bug_ids: set[str] = set()
+    for bug in (state or {}).get("production_bugs", []):
+        bug_ids |= expand_spec_ids(bug.get("symptom", ""))
+    if not bug_ids:
+        return []
+    out = []
+    for fl in failures:
+        ids = expand_spec_ids(fl.get("name", ""))
+        if ids and ids <= bug_ids:
+            out.append(fl)
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # verdict
 # --------------------------------------------------------------------------- #
 def compute_verdict(report: dict, target: str | None, state: dict,
                     in_denominator: bool = True) -> dict:
     """ループを継続すべきか（continue / stop / n/a）を算出する。
 
-    判定順は「上限 → 失敗 → 達成 → 理由あり → それ以外」。
-    暴走を止めるのが最優先なので上限を先に見る。
+    まず上限を無視して「失敗 → 達成 → 理由あり → それ以外」の順に判定し、
+    結果が continue のときだけ上限（内部 → 外部）を当てはめて stop に変える。
+    上限は暴走（continue が続くこと）を止めるためのものなので、目標に達した
+    stop（記録済みのバグだけが残っている場合を含む）を「上限に到達」で上書きしない。
+    こうしないと、エージェントが1起動内でハーネスを何度も回して内部カウンタを
+    使い切ったとき、バグを記録しても「内部上限」としか出ず、外部ループを
+    余分に1周させないと本当の判定が得られない。
 
     `in_denominator=False`（Widget テストの Page など限定分母外）のときは
     カバレッジを見ず、全テスト green かどうかだけで判定する。
     """
+    loop = _goal_verdict(report, target, state, in_denominator)
+    if loop["verdict"] != "continue":
+        return loop
+
+    # 上限: continue のままなら打ち切る（未達の理由は warnings に残す）
+    if loop["inner"] >= INNER_MAX:
+        limit = f"内部上限に到達（{loop['inner']}/{INNER_MAX} 回）"
+    elif loop["outer"] >= OUTER_MAX:
+        limit = f"外部上限に到達（{loop['outer']}/{OUTER_MAX} 回）"
+    else:
+        return loop
+    loop["warnings"].append(f"未達のまま打ち切り: {loop['reason']}")
+    loop["verdict"] = "stop"
+    loop["reason"] = limit
+    return loop
+
+
+def _goal_verdict(report: dict, target: str | None, state: dict,
+                  in_denominator: bool) -> dict:
+    """上限を考えずに、目標（green・カバレッジ）に達しているかだけを判定する。"""
     inner = int((state.get("inner") or {}).get(target, 0)) if target else 0
     outer = int((state.get("outer") or {}).get(target, 0)) if target else 0
     loop = {
@@ -487,24 +781,20 @@ def compute_verdict(report: dict, target: str | None, state: dict,
     threshold = cov.get("threshold", 90.0)
     entry = next((f for f in cov.get("files", []) if f.get("path") == target), None)
 
-    # 1. 内部上限
-    if inner >= INNER_MAX:
-        loop["verdict"] = "stop"
-        loop["reason"] = f"内部上限に到達（{inner}/{INNER_MAX} 回）"
-        return loop
-
-    # 2. 外部上限
-    if outer >= OUTER_MAX:
-        loop["verdict"] = "stop"
-        loop["reason"] = f"外部上限に到達（{outer}/{OUTER_MAX} 回）"
-        return loop
-
-    # 3. テスト失敗（対象のテストファイルに限る）
+    # 1. テスト失敗（対象のテストファイルに限る）
     stem = _stem(target)
     failures = [
         fl for fl in (report.get("tests", {}) or {}).get("failures", [])
         if not fl.get("file") or _stem(fl["file"]) == stem
     ]
+    # 記録済みのバグによる失敗（仕様どおりの期待値で落ちたもの）はループを回す理由にしない
+    known = known_bug_failures(failures, state)
+    if known:
+        loop["warnings"].append(
+            f"記録済みのバグによる失敗 {len(known)} 件は判定から除外した"
+            "（仕様どおりの期待値で落ちているため、テストを直さない）"
+        )
+        failures = [fl for fl in failures if fl not in known]
     if failures:
         loop["verdict"] = "continue"
         loop["reason"] = f"テスト失敗 {len(failures)} 件"
@@ -514,8 +804,8 @@ def compute_verdict(report: dict, target: str | None, state: dict,
     if not in_denominator:
         loop["verdict"] = "stop"
         loop["reason"] = (
-            "全テスト green（限定分母外のためカバレッジは判定に使わない）"
-        )
+            "記録済みのバグによる失敗を除き全テスト green" if known else "全テスト green"
+        ) + "（限定分母外のためカバレッジは判定に使わない）"
         return loop
 
     # カバレッジに現れない＝このテストが対象ファイルを読み込んでいない
@@ -527,13 +817,13 @@ def compute_verdict(report: dict, target: str | None, state: dict,
     pct = entry.get("pct", 0.0)
     uncovered = set(entry.get("uncovered_lines", []) or [])
 
-    # 4. 達成
+    # 2. 達成
     if pct >= threshold:
         loop["verdict"] = "stop"
         loop["reason"] = f"カバレッジ {pct}% が閾値 {threshold}% を満たしている"
         return loop
 
-    # 5. 90% 未満だが、未カバー行に理由が付いている
+    # 3. 90% 未満だが、未カバー行に理由が付いている
     lines, has_reason, has_pending = reasoned_lines(target)
     if has_pending:
         loop["verdict"] = "continue"
@@ -562,7 +852,7 @@ def compute_verdict(report: dict, target: str | None, state: dict,
         )
         return loop
 
-    # 6. それ以外
+    # 4. それ以外
     loop["verdict"] = "continue"
     if has_reason:
         preview = ", ".join(map(str, missing[:12]))

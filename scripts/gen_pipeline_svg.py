@@ -111,7 +111,7 @@ def main() -> int:
     text(30, 64, "ユーザー入力から Excel 項目書の生成・セッション破棄まで ／ "
                  "Skill・サブエージェント・Hooks の発火位置つき", 12, "#6b7280")
     text(30, 82, "定義の正: .claude/skills/test-loop/SKILL.md ・ .claude/settings.json　｜　"
-                 "解説: docs/test_loop_pipeline.md ・ docs/hooks.md　｜　"
+                 "解説: docs/development/test_loop_pipeline.md ・ docs/development/hooks.md　｜　"
                  "この図は scripts/gen_pipeline_svg.py で生成（直接編集しない）",
          11, "#9ca3af")
 
@@ -243,7 +243,7 @@ def main() -> int:
             "◆ 判定（手順4）: harness_report.json の loop.verdict は？",
             ["stop  → 手順6 へ（上限到達 / カバレッジ達成 / 未カバー行に理由あり）",
              "continue → 差し戻して手順2〜4 を反復",
-             "上限は内部3回・外部5回。compute_verdict が最優先で判定するため暴走しない",
+             "上限は内部3回・外部3回。上限に達すると compute_verdict が continue を stop に変えるため暴走しない",
              "※ ループの継続/終了は LLM が判断しない。回数も数えない"],
             dashed=True)
     bh = box(LEFT_X, dy, LEFT_W, "bug", "🐞 プロダクションコードのバグ",

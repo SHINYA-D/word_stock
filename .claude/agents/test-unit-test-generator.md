@@ -24,13 +24,39 @@ CLAUDE.md の「## テスト方針」が最優先ルールです。矛盾する�
 画面（Page）の Widget テスト（`testWidgets()`）は **対象外**（`test-widget-test-generator` の担当）。
 このエージェントは Dart コードのロジックだけを対象に `test()` のみで検証し、`testWidgets()` を絶対に使いません。
 
+## 仕様書（詳細設計書）が渡された場合
+
+プロンプトに仕様書のパスと担当する仕様 ID が渡されたら、**期待値は仕様書だけから作る**。
+
+- 対象コードは「どう呼ぶか」（メソッド名・引数・Provider 名・State の型）を知るためだけに読む。
+  コードの動作を見て期待値を決めない（バグがそのまま正解になるため）
+- 担当する仕様 ID の1件につき1件以上のテストケースを作る。4章（V）は ViewModel、5章（R）は Repository、
+  2.2（N）は「守る層」がこの対象の層のものだけ
+- 仕様書の「条件」をテストの準備（Arrange / Act）に、「期待される状態」「期待される結果」を `expect` に写す
+- テスト名は「○○の場合、△△が起きる」形式のまま、末尾に仕様 ID を付ける（例: `…、samples が AsyncData([A, B]) になる [SMP-V14]`）
+- 仕様どおりの期待値で落ちたテストは、**期待値をコードに合わせて直さない**。プロダクションコードのバグとして報告する
+  - 残っている失敗が「仕様どおりの期待値で落ちたテスト」だけになったら、**ハーネスを再実行せずに結果報告して終える**
+    （テストを直す余地が無いのに再実行すると、内部上限まで回り続けるだけになる。バグの記録はメインが行う）
+- 2.2（N）の ID は、仕様書の「境界値」列の**値1つにつきテストケースを1件**作る（1件のテストに複数の値をまとめない）。
+  テスト名に値を書く（例: `…「a」×21 を入力した場合、入力欄は「a」×20 のまま [SMP-N01]`）。Dart では値の一覧を
+  ループして `test()` / `testWidgets()` を値ごとに登録してよい
+- 項目書のテスト名は、テストコードの `test()` / `testWidgets()` の説明文と**一字一句同じ**にする
+  （Excel はテスト名でハーネスの失敗と結び付けるため。ずれると NG が反映されない）
+- 仕様書が曖昧・矛盾していて期待値を決められない ID は、テストを書かずに結果報告の「仕様書の不備」に書く
+- 担当する ID をすべてテストした後に残る未カバー行は、仕様書にない振る舞い。コードから期待値を作ってテストを足さず、
+  項目書 `## 対象外` に `- L142-145：仕様書に記載なし（仕様書への追記候補）` と書く
+
+仕様書が渡されない場合は、従来どおり対象コードからテストを設計する。
+
 ## 実行前に必ず確認すること
 
+0. （仕様書が渡された場合）仕様書を読み、担当する仕様 ID の条件と期待値を把握する
 1. 対象ファイルを完全に読み、依存関係（コンストラクタ引数の Provider / DataSource）を把握する
 2. 既存の類似テストを最低1つ読む（Repository → `test/infrastructure/repositories/folder_repository_impl_test.dart`、
    LocalDataSource → `test/infrastructure/data_sources/local/flashcard_result_local_data_source_test.dart`）
 3. `test/helpers/test_helpers.dart` と `test/helpers/fake_infrastructure.dart` を読み、
-   利用可能な Fake（`FakeFirestoreDataSource` / `FakeConnectivityMonitor`）とフィクスチャを確認する
+   利用可能な Fake（`FakeFirestoreDataSource` / `FakeConnectivityMonitor` / `FakeSampleRepository`）とフィクスチャを確認する。
+   同じ Repository の Fake をテストファイル内に作り直さない（ViewModel テストと Widget テストで共有する）
 4. `.claude/skills/unit-test-authoring/SKILL.md` の雛形（Either検証 / ProviderContainer / sqflite_common_ffi）を確認する
 
 ## ViewModel 単体テストの標準パターン
@@ -134,6 +160,11 @@ bash scripts/test_harness.sh <生成したテストファイルパス>
 - [ファイル]:[行] … テスト追加済み / 対象外（理由）
 ### テストケース内訳
 - 正常系: X / 異常系: Y / 境界値: Z / 合計: N
+### 仕様書との対応（仕様書が渡された場合）
+- 担当 ID N 件中 M 件をテスト済み（未テストの ID と理由: ...）
+- 仕様どおりの期待値で落ちたテスト: 仕様 ID / テスト名 / 今のコードの動作
+### 仕様書の不備
+- 仕様 ID or 行 … 曖昧・矛盾・記載なしの内容
 ```
 
 ## 項目書 MD の仕様

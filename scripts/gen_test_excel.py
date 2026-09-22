@@ -15,7 +15,9 @@
   記載要領・観点一覧 … 各列の意味・観点分類（正常系/異常系/境界値）の考え方
   サマリ          … 対象ファイルごとのテスト数・カテゴリ内訳・カバレッジ
   要確認一覧       … テスト工程で解消しきれなかった問題（理由なし未達 / 90%未満（理由あり） /
-                     テスト失敗 / テスト漏れ / プロダクションコードのバグ）
+                     テスト失敗 / テスト漏れ / プロダクションコードのバグ / 仕様漏れ）。
+                     テスト失敗とバグは仕様 ID で結び付け、「関連」列に対応を書く
+  仕様との対応     … 仕様書（詳細設計書）の ID ごとに、引用しているテストケースと結果
   単体テスト項目書  … test()  ベースの項目一覧（1テストケース=1行）
   Widgetテスト項目書 … testWidgets() ベースの項目一覧（1テストケース=1行）
   対象外一覧       … 登録簿(test/coverage_exclusions.txt) + 項目書MD の対象外
@@ -241,6 +243,7 @@ def parse_file(path: str):
         i_cat = col(header, "カテゴリ", "状態パターン")
         i_method = col(header, "対象メソッド", "検証項目")
         i_status = col(header, "状態")
+        i_spec = col(header, "仕様ID")
         for idx, r in enumerate(rows, start=1):
             def get(hidx):
                 return r[hidx] if hidx is not None and hidx < len(r) else ""
@@ -256,6 +259,7 @@ def parse_file(path: str):
                 "input": detail.get("input", ""),
                 "steps": detail.get("steps", ""),
                 "expected": detail.get("expected", ""),
+                "spec_ids": sorted(loop_state.expand_spec_ids(get(i_spec))),
             })
     return {
         "doc": os.path.relpath(path, REPO),
@@ -264,6 +268,7 @@ def parse_file(path: str):
         "class": cls,
         "cases": cases,
         "offtargets": parse_offtargets(text),
+        "spec": meta.get("仕様書", "").strip("` "),
     }
 
 
@@ -410,6 +415,8 @@ def build_guideline_sheet(wb):
         ("結果", "実施結果（OK／NG／未実施）。MDの「状態」列（✅=ハーネスでテスト到達・実装済み）から自動設定される。"
                 "手動で再判定した場合は書き換えてよい。"),
         ("備考", "NG時の不具合番号、補足事項、再テスト結果などを記載する。"),
+        ("仕様ID", "期待結果の根拠にした詳細設計書（仕様書）の ID。仕様書のある対象だけ記載される。"
+                  "仕様 ID ごとの対応は「仕様との対応」シートを参照。"),
     ]
     row = 5
     for name, desc in col_defs:
@@ -483,6 +490,17 @@ def _norm_name(s: str) -> str:
     return re.sub(r"\s+", "", s or "")
 
 
+_SPEC_TAG_TAIL = re.compile(r"\s*\[[A-Z]{3}-[A-Z]\d+[^\]]*\]\s*$")
+
+
+def _raw_name(s: str) -> str:
+    """空白は残したまま、末尾の仕様 ID タグ（` [SMP-N06]`）だけ落とす。
+
+    テストコードの説明文には付いていて、項目書の一覧には付いていないことがあるため。
+    """
+    return _SPEC_TAG_TAIL.sub("", (s or "").strip())
+
+
 def build_failure_index(report):
     """harness_report.json の失敗テストを項目書と突き合わせられる形にする。
 
@@ -499,6 +517,7 @@ def build_failure_index(report):
         out.append({
             "stem": _stem(test_file) if test_file else "",
             "name": name,
+            "raw": _raw_name(fl.get("name")),
             "file": test_file,
             "message": (fl.get("message") or "").strip(),
         })
@@ -516,13 +535,39 @@ def find_failure(fi, case, failures):
     if len(case_name) < 4:  # 短すぎる名前は誤マッチしやすいので突き合わせない
         return None
     target_stem = _stem(fi.get("target", ""))
+    case_raw = _raw_name(case.get("name"))
+    other_raws = [_raw_name(c.get("name")) for c in fi.get("cases", []) if c is not case]
     candidates = []
     for fl in failures:
         if fl["stem"] and target_stem and fl["stem"] != target_stem:
             continue
         if case_name in fl["name"] or fl["name"] in case_name:
             candidates.append(fl)
+    # 空白を落とした比較では「a」と「 a 」が同じ名前になる。空白を残した名前で
+    # 完全に一致する失敗を優先し、別のケースと完全に一致する失敗は候補から外す。
+    exact = [fl for fl in candidates if case_raw and fl["raw"].endswith(case_raw)]
+    if exact:
+        candidates = exact
+    else:
+        candidates = [
+            fl for fl in candidates
+            if not any(o and fl["raw"].endswith(o) for o in other_raws)
+        ]
     if not candidates:
+        # テスト名がずれていても、テスト名末尾の [SMP-D01] と項目書の「仕様ID」列で結び付ける。
+        # その仕様 ID を引用するケースがこのファイルに1件しか無いときだけ（誤結合を防ぐ）。
+        own = set(case.get("spec_ids") or [])
+        if not own:
+            return None
+        for fl in failures:
+            if fl["stem"] and target_stem and fl["stem"] != target_stem:
+                continue
+            tags = loop_state.expand_spec_ids(fl["name"])
+            shared = own & tags
+            if shared and sum(
+                1 for c in fi["cases"] if shared & set(c.get("spec_ids") or [])
+            ) == 1:
+                return fl
         return None
     if len(candidates) > 1:
         # 同一ファイル内でテスト名が同じケース（例: signInWithEmail 版と
@@ -541,7 +586,7 @@ def build_test_item_sheet(ws, files, id_prefix: str, sheet_title: str, generated
 
     col_widths = {
         "A": 5, "B": 16, "C": 18, "D": 20, "E": 10, "F": 26, "G": 22,
-        "H": 24, "I": 24, "J": 26, "K": 11, "L": 10, "M": 8, "N": 18,
+        "H": 24, "I": 24, "J": 26, "K": 11, "L": 10, "M": 8, "N": 18, "O": 16,
     }
     for col, w in col_widths.items():
         ws.column_dimensions[col].width = w
@@ -549,17 +594,17 @@ def build_test_item_sheet(ws, files, id_prefix: str, sheet_title: str, generated
     ws.row_dimensions[1].height = 24
     ws["A1"] = sheet_title
     ws["A1"].font = TITLE_FONT
-    ws.merge_cells("A1:N1")
+    ws.merge_cells("A1:O1")
 
     total_cases = sum(len(fi["cases"]) for fi in files)
     ws["A2"] = f"対象ファイル数：{len(files)}　　テストケース数：{total_cases}"
     ws["A2"].font = NOTE_FONT
-    ws.merge_cells("A2:N2")
+    ws.merge_cells("A2:O2")
 
     headers = [
         "No.", "テストID", "大分類\n（対象機能／クラス）", "中分類\n（対象メソッド／画面項目）",
         "観点分類", "テスト観点（確認内容）", "事前条件", "入力値・テスト条件", "操作手順",
-        "期待結果", "実施日", "実施者", "結果", "備考",
+        "期待結果", "実施日", "実施者", "結果", "備考", "仕様ID",
     ]
     header_row = 4
     for i, h in enumerate(headers, start=1):
@@ -573,7 +618,7 @@ def build_test_item_sheet(ws, files, id_prefix: str, sheet_title: str, generated
               "（詳しい定義は「記載要領・観点一覧」シートを参照）",
     )
     ws.cell(row=note_row, column=1).font = NOTE_FONT
-    ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=14)
+    ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=15)
 
     center_cols = {1, 5, 11, 12, 13}
     r = ITEM_DATA_FIRST_ROW
@@ -598,6 +643,7 @@ def build_test_item_sheet(ws, files, id_prefix: str, sheet_title: str, generated
                 no, test_id, fi["class"] or fi["target"], case["method"],
                 case["category"], case["name"], case["prereq"], case["input"],
                 case["steps"], case["expected"], jisshibi, jissha, result, remark,
+                ", ".join(case.get("spec_ids") or []),
             ]
             for i, val in enumerate(row_vals, start=1):
                 align = WRAP_CENTER_H if i in center_cols else WRAP_TOP
@@ -667,11 +713,15 @@ def build_summary_sheet(ws, files, report, warnings):
     counts = {}
     for w in warnings:
         counts[w["kind"]] = counts.get(w["kind"], 0) + 1
+    linked = sum(1 for w in warnings if w["kind"] == "テスト失敗" and w.get("related"))
     ws.append(["要確認",
                " / ".join(f"{k} {counts.get(k, 0)}件" for k, _ in WARNING_KINDS)
                + "　（詳細は「要確認一覧」シート）"])
     if any(counts.get(k, 0) for k, red in WARNING_KINDS if red):
         ws.cell(row=ws.max_row, column=2).font = RED_FONT
+    if counts.get("テスト失敗"):
+        ws.append(["", f"テスト失敗 {counts['テスト失敗']} 件のうち、記録済みのバグが原因のもの "
+                       f"{linked} 件（テスト失敗は症状、バグは原因なので、同じ問題が両方に載る）"])
     ws.append([])
 
     hdr_row = ws.max_row + 1
@@ -712,6 +762,7 @@ WARNING_KINDS = [
     ("テスト漏れ", True),
     ("90%未満（理由あり）", False),
     ("対象外に行番号なし", False),
+    ("仕様漏れ", False),
 ]
 
 
@@ -780,15 +831,33 @@ def collect_warnings(files, report, state, scoped: bool):
                 "action": "テストを追加するか、項目書の「## 対象外」に理由を記録する",
             })
 
-    # テスト失敗
+    # 記録済みのバグ（テスト失敗との結び付けに先に使う）
+    bugs = []
+    for bug in (state or {}).get("production_bugs", []):
+        path = _norm(bug.get("path", ""))
+        line = bug.get("line")
+        bugs.append({
+            "bug": bug, "path": path,
+            "label": f"{path}:{line}" if line else path,
+            "ids": loop_state.expand_spec_ids(bug.get("symptom", "")),
+        })
+
+    # テスト失敗（仕様 ID で原因のバグと結び付ける）
+    scoped_failures = []
     for fl in (report or {}).get("tests", {}).get("failures", []):
         test_file = fl.get("file", "")
         if scoped and test_file and _stem(test_file) not in target_stems:
             continue
+        scoped_failures.append(fl)
+        tags = loop_state.expand_spec_ids(fl.get("name", ""))
+        causes = [b["label"] for b in bugs if tags and tags & b["ids"]]
         out.append({
             "kind": "テスト失敗", "target": test_file or "-",
             "content": fl.get("name", ""), "detail": fl.get("message", ""),
-            "action": "テストコードの誤りか、プロダクションコードのバグかを切り分ける",
+            "action": ("原因のバグ（「関連」列）を直すと解消する見込み。テストは直さない"
+                       if causes else
+                       "テストコードの誤りか、プロダクションコードのバグかを切り分ける"),
+            "related": ("原因: " + " / ".join(causes)) if causes else "",
         })
 
     # テスト漏れ（テストも対象外登録も無い対象ファイル）
@@ -801,19 +870,56 @@ def collect_warnings(files, report, state, scoped: bool):
             "action": "テストを書くか test/coverage_exclusions.txt に理由付きで登録する",
         })
 
-    # プロダクションコードのバグ（test-loop が test_loop_state.json に記録したもの）
-    for bug in (state or {}).get("production_bugs", []):
-        path = _norm(bug.get("path", ""))
-        if scoped and path not in targets:
+    # プロダクションコードのバグ（test-loop が .test_loop/state.json に記録したもの）
+    # 範囲を絞るときも、バグの場所が対象ファイルそのものとは限らない
+    # （State・部品の Widget 等）。次のどれかに当てはまれば今回の対象のバグとして載せる:
+    #   ・場所が対象ファイル ・場所が対象ファイルと同じフォルダ（配下を含む）
+    #   ・症状の仕様 ID が、今回の対象の項目書から引用されている
+    target_dirs = {os.path.dirname(t) for t in targets}
+    cited_ids = {i for fi in files for c in fi["cases"] for i in c.get("spec_ids") or []}
+    for b in bugs:
+        path = b["path"]
+        in_scope = (
+            path in targets
+            or any(path.startswith(d + "/") for d in target_dirs if d)
+            or bool(b["ids"] & cited_ids)
+        )
+        if scoped and not in_scope:
             continue
-        line = bug.get("line")
+        bug = b["bug"]
+        linked = [
+            fl for fl in scoped_failures
+            if b["ids"] & loop_state.expand_spec_ids(fl.get("name", ""))
+        ]
         out.append({
             "kind": "プロダクションコードのバグ",
-            "target": f"{path}:{line}" if line else path,
+            "target": b["label"],
             "content": bug.get("symptom", ""),
             "detail": bug.get("evidence", ""),
             "action": bug.get("recommendation", "") or "プロダクションコードを修正する（テスト工程では変更していない）",
+            "related": f"このバグで落ちているテスト: {len(linked)} 件" if linked else "",
         })
+
+    # 仕様漏れ（仕様書のある対象で、テストの無い仕様 ID / 境界値のテスト不足）
+    for fi in files:
+        sc = loop_state.spec_coverage(_norm(fi["target"])) if fi.get("spec") else None
+        if not sc:
+            continue
+        if sc["missing"]:
+            out.append({
+                "kind": "仕様漏れ", "target": fi["target"],
+                "content": "テストの無い仕様 ID: " + ", ".join(sc["missing"]),
+                "detail": f"仕様書: {sc['spec']}",
+                "action": "仕様 ID ごとにテストを追加する（項目書の「仕様ID」列に ID を書く）",
+            })
+        for bshort in sc["boundary_short"]:
+            out.append({
+                "kind": "仕様漏れ", "target": fi["target"],
+                "content": f"{bshort['id']}: 境界値のテストが {bshort['have']} 件"
+                           f"（仕様書の境界値は {bshort['need']} 件）",
+                "detail": f"仕様書: {sc['spec']}",
+                "action": "境界値1つにつきテストを1件にする",
+            })
 
     order = {k: i for i, (k, _) in enumerate(WARNING_KINDS)}
     out.sort(key=lambda w: order[w["kind"]])
@@ -822,13 +928,14 @@ def collect_warnings(files, report, state, scoped: bool):
 
 def build_warning_sheet(ws, warnings):
     red_kinds = {k for k, red in WARNING_KINDS if red}
-    cols = ["区分", "対象", "内容", "詳細・理由", "対応の目安"]
+    cols = ["区分", "対象", "内容", "詳細・理由", "対応の目安", "関連"]
     ws.append(cols)
     style_header(ws, len(cols))
     if not warnings:
-        ws.append(["（なし）", "", "テスト工程で解消しきれなかった問題はありません", "", ""])
+        ws.append(["（なし）", "", "テスト工程で解消しきれなかった問題はありません", "", "", ""])
     for w in warnings:
-        ws.append([w["kind"], w["target"], w["content"], w["detail"], w["action"]])
+        ws.append([w["kind"], w["target"], w["content"], w["detail"], w["action"],
+                   w.get("related", "")])
         red = w["kind"] in red_kinds
         for c in range(1, len(cols) + 1):
             cell = ws.cell(row=ws.max_row, column=c)
@@ -836,7 +943,63 @@ def build_warning_sheet(ws, warnings):
             cell.fill = RED_FILL if red else YELLOW_FILL
             if red and c in (1, 3):
                 cell.font = RED_FONT
-    autosize(ws, [22, 46, 50, 60, 44])
+    autosize(ws, [22, 46, 50, 60, 44, 40])
+
+
+def case_test_id(fi, case) -> str:
+    """「単体テスト項目書」「Widgetテスト項目書」シートと同じテスト ID。"""
+    prefix = "WT" if fi["kind"] == "Widget" else "UT"
+    no = case["no"]
+    return f"{prefix}-{make_slug(fi)}-{no.zfill(3) if no.isdigit() else no}"
+
+
+def build_spec_trace_sheet(ws, files, failures):
+    """仕様書の ID ごとに、引用しているテストケースと結果を並べる。
+
+    行の単位は「仕様 ID × 担当する対象ファイル」。仕様書のある項目書だけが対象。
+    """
+    cols = ["仕様書", "仕様ID", "担当する対象ファイル", "テスト件数", "境界値の数",
+            "結果", "テストケース（テストID）"]
+    ws.append(cols)
+    style_header(ws, len(cols))
+    rows = 0
+    for fi in files:
+        sc = loop_state.spec_coverage(_norm(fi["target"])) if fi.get("spec") else None
+        if not sc:
+            continue
+        for sid in sc["required"]:
+            cases = [c for c in fi["cases"] if sid in (c.get("spec_ids") or [])]
+            results = []
+            for c in cases:
+                res = "NG" if failures and find_failure(fi, c, failures) else \
+                    map_status_to_result(c["status"])
+                results.append(res)
+            if not cases:
+                result = "未テスト"
+            elif "NG" in results:
+                result = f"NG（{results.count('NG')}/{len(results)} 件）"
+            elif all(x == "OK" for x in results):
+                result = "OK"
+            else:
+                result = "未実施あり"
+            need = sc["boundary_need"].get(sid)
+            ws.append([
+                sc["spec"], sid, fi["target"], len(cases), need or "", result,
+                "\n".join(case_test_id(fi, c) for c in cases),
+            ])
+            rows += 1
+            short = need and len(cases) < need
+            for c in range(1, len(cols) + 1):
+                ws.cell(row=ws.max_row, column=c).alignment = WRAP_TOP
+            if result == "未テスト" or short:
+                for c in range(1, len(cols) + 1):
+                    ws.cell(row=ws.max_row, column=c).fill = YELLOW_FILL
+            elif result.startswith("NG"):
+                ws.cell(row=ws.max_row, column=6).font = RED_FONT
+                ws.cell(row=ws.max_row, column=6).fill = RED_FILL
+    if not rows:
+        ws.append(["（仕様書のある項目書がありません）"])
+    autosize(ws, [44, 11, 46, 10, 10, 16, 30])
 
 
 def build_offtarget_sheet(ws, files, report):
@@ -925,6 +1088,7 @@ def main() -> int:
     build_test_item_sheet(wb.create_sheet("Widgetテスト項目書"),
                           [f for f in files if f["kind"] == "Widget"], "WT", "Widgetテスト項目書",
                           generated_at, failures)
+    build_spec_trace_sheet(wb.create_sheet("仕様との対応"), files, failures)
     build_offtarget_sheet(wb.create_sheet("対象外一覧"), files, report)
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
