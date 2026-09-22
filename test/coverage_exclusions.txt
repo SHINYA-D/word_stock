@@ -17,5 +17,6 @@
 
 lib/domain/entities/app_user.dart | Freezed 宣言のみ。自作ロジック・不変条件なし
 lib/domain/entities/folder.dart | Freezed 宣言のみ。唯一の手書き行 L16 の fromJson は lib 内から未使用（生成コードへの委譲）。他テストから間接 import され lcov に 0% で現れるため stale 警告が出るが、専用テストは無く登録は有効
+lib/domain/entities/sample.dart | Freezed 宣言のみ。手書き行の fromJson は生成コードへの委譲で、仕様書 SMP に独自ロジックの項目なし。ViewModel・Repository のテストから間接 import され lcov に 0% で現れるため stale 警告が出るが、専用テストは無く登録は有効
 lib/domain/entities/user_settings.dart | Freezed 宣言のみ。デフォルト値だけでロジックなし
 lib/domain/entities/word.dart | Freezed 宣言のみ。自作ロジック・不変条件なし

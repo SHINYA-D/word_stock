@@ -12,21 +12,22 @@
 
 | # | テスト名 | カテゴリ | 対象メソッド | 状態 |
 |---|---------|---------|-----------|------|
-| 1 | 3つのナビゲーション項目（ホーム・成績・設定）が表示される場合、NavigationBarにすべてのラベルが表示される | 正常系 | build() | ✅ |
+| 1 | 4つのナビゲーション項目（ホーム・成績・テスト・設定）が表示される場合、NavigationBarにすべてのラベルが表示される | 正常系 | build() | ✅ |
 | 2 | /home表示時、ホームタブが選択状態になる | 正常系 | build() | ✅ |
 | 3 | /folder/:idのようなホーム配下のサブパス表示時、ホームタブが選択状態になる | 境界値 | _tabIndex() | ✅ |
 | 4 | 成績タブをタップした場合、/results画面に切り替わりタブの選択状態も更新される | 正常系 | build() | ✅ |
-| 5 | 設定タブをタップした場合、/settings画面に切り替わりタブの選択状態も更新される | 正常系 | build() | ✅ |
+| 5 | テストタブをタップした場合、/sample画面に切り替わりタブの選択状態も更新される | 正常系 | build() | ✅ |
+| 6 | 設定タブをタップした場合、/settings画面に切り替わりタブの選択状態も更新される | 正常系 | build() | ✅ |
 
 ## テストケース詳細
 
-### テストケース1: 3つのナビゲーション項目（ホーム・成績・設定）が表示される場合、NavigationBarにすべてのラベルが表示される
+### テストケース1: 4つのナビゲーション項目（ホーム・成績・テスト・設定）が表示される場合、NavigationBarにすべてのラベルが表示される
 - **カテゴリ**: 正常系
 - **対象メソッド**: build()
-- **事前条件**: テスト専用の最小GoRouter（/home, /folder/:id, /results, /settingsをShellRoute配下に定義）で `/home` を初期表示
+- **事前条件**: テスト専用の最小GoRouter（/home, /folder/:id, /results, /sample, /settingsをShellRoute配下に定義）で `/home` を初期表示
 - **入力値・テスト条件**: なし（初期描画のみ）
 - **操作手順**: `MaterialApp.router` をpumpする
-- **期待結果**: `find.text('ホーム')` `find.text('成績')` `find.text('設定')` がそれぞれ1件見つかる。`NavigationBar` が1件見つかる
+- **期待結果**: `find.text('ホーム')` `find.text('成績')` `find.text('テスト')` `find.text('設定')` がそれぞれ1件見つかる。`NavigationBar` が1件見つかる
 
 ### テストケース2: /home表示時、ホームタブが選択状態になる
 - **カテゴリ**: 正常系
@@ -52,14 +53,22 @@
 - **操作手順**: `find.text('成績')` をtap → `pumpAndSettle()`
 - **期待結果**: `results-screen` のテキストが表示される。`NavigationBar.selectedIndex == 1`
 
-### テストケース5: 設定タブをタップした場合、/settings画面に切り替わりタブの選択状態も更新される
+### テストケース5: テストタブをタップした場合、/sample画面に切り替わりタブの選択状態も更新される
+- **カテゴリ**: 正常系
+- **対象メソッド**: build()
+- **事前条件**: 初期ロケーション `/home` でGoRouterを構築
+- **入力値・テスト条件**: なし
+- **操作手順**: `find.text('テスト')` をtap → `pumpAndSettle()`
+- **期待結果**: `sample-screen` のテキストが表示される。`NavigationBar.selectedIndex == 2`
+
+### テストケース6: 設定タブをタップした場合、/settings画面に切り替わりタブの選択状態も更新される
 - **カテゴリ**: 正常系
 - **対象メソッド**: build()
 - **事前条件**: 初期ロケーション `/home` でGoRouterを構築
 - **入力値・テスト条件**: なし
 - **操作手順**: `find.text('設定')` をtap → `pumpAndSettle()`
-- **期待結果**: `settings-screen` のテキストが表示される。`NavigationBar.selectedIndex == 2`
+- **期待結果**: `settings-screen` のテキストが表示される。`NavigationBar.selectedIndex == 3`
 
 ## 対象外
 
-- なし（48行のシェルWidget。build()とプライベートメソッド_tabIndex()の分岐は全ケースで到達）
+- なし（53行のシェルWidget。build()とプライベートメソッド_tabIndex()の分岐は全ケースで到達）
