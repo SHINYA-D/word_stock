@@ -869,6 +869,100 @@ def _goal_verdict(report: dict, target: str | None, state: dict,
     return loop
 
 
+def test_paths_for(target: str) -> list[str]:
+    """対象の lib ファイルに対応するテストファイルを探す（無ければ空リスト）。
+
+    規約どおりのミラー構成（lib/x/y.dart → test/x/y_test.dart）を先に見て、
+    無ければ test/ 全体から同じ stem のファイルを探す（Page は階層がずれるため）。
+    """
+    rel = target.replace("\\", "/")
+    hits: list[str] = []
+    if rel.startswith("lib/") and rel.endswith(".dart"):
+        mirror = "test/" + rel[len("lib/"):-len(".dart")] + "_test.dart"
+        if os.path.exists(os.path.join(REPO, mirror)):
+            hits.append(mirror)
+    if not hits:
+        stem = _stem(rel)
+        cwd = os.getcwd()
+        try:
+            os.chdir(REPO)
+            hits = [
+                p.replace("\\", "/")
+                for p in glob.glob("test/**/*_test.dart", recursive=True)
+                if _stem(p) == stem
+            ]
+        finally:
+            os.chdir(cwd)
+    return sorted(hits)
+
+
+def _stale_inputs(target: str, report: dict) -> list[str]:
+    """レポートより後に更新されたファイル（＝レポートが古いことの証拠）を返す。"""
+    raw = report.get("generated_at") or ""
+    try:
+        gen = datetime.fromisoformat(raw).timestamp()
+    except ValueError:
+        return ["harness_report.json（生成時刻を読めない）"]
+    watched = [target, *test_paths_for(target)]
+    doc = doc_path_for(target)
+    if doc:
+        watched.append(doc)
+    out = []
+    for rel in watched:
+        full = os.path.join(REPO, rel)
+        if os.path.exists(full) and os.path.getmtime(full) > gen + 1:
+            out.append(rel)
+    return out
+
+
+def can_skip_generation(target: str, report: dict, state: dict) -> dict:
+    """既存のテストだけで基準を満たしているか（＝手順3〜6を飛ばしてよいか）。
+
+    「2回目の実行で成果物が変わらない」ようにするための判定。
+    次の3つをすべて満たすときだけ飛ばしてよい:
+
+      1. loop.verdict が stop（green かつカバレッジ基準を満たす。
+         上限到達による stop は除く＝目標に達していないため）
+      2. 仕様書がある対象では、テストの無い仕様 ID が無い
+      3. 同じく、境界値のテストが足りない仕様 ID が無い
+
+    判定材料は「そのテストファイルでハーネスを回した直後のレポート」であること。
+    """
+    stale = _stale_inputs(target, report)
+    if stale:
+        return {
+            "target": target,
+            "can_skip": False,
+            "reason": "レポートが古い（" + ", ".join(stale)
+                      + " の方が新しい）。対象のテストでハーネスを回し直すこと",
+            "loop": {},
+            "spec_checked": False,
+        }
+    loop = compute_verdict(report, target, state,
+                           in_denominator=target in (report.get("coverage", {})
+                                                     .get("target_files", []) or [target]))
+    reasons: list[str] = []
+    if loop.get("verdict") != "stop":
+        reasons.append(f"ループ判定が stop ではない（{loop.get('reason')}）")
+    elif "上限に到達" in (loop.get("reason") or ""):
+        reasons.append(f"上限による打ち切りで、目標に達していない（{loop.get('reason')}）")
+    sc = report.get("spec") or spec_coverage(target)
+    if sc:
+        if sc.get("missing"):
+            reasons.append("テストの無い仕様 ID: " + ", ".join(sc["missing"]))
+        if sc.get("boundary_short"):
+            reasons.append("境界値のテストが足りない仕様 ID: " + ", ".join(
+                f"{b['id']}（{b['have']}/{b['need']} 件）" for b in sc["boundary_short"]))
+    return {
+        "target": target,
+        "can_skip": not reasons,
+        "reason": "既存のテストで基準を満たしている（生成を飛ばして手順7へ）"
+                  if not reasons else " ／ ".join(reasons),
+        "loop": loop,
+        "spec_checked": bool(sc),
+    }
+
+
 def format_loop(loop: dict) -> str:
     """stdout 表示用の1〜2行。"""
     mark = {"stop": "■", "continue": "▶", "n/a": "－"}.get(loop["verdict"], "?")
@@ -913,6 +1007,13 @@ def main() -> int:
     p.add_argument("target")
 
     p = sub.add_parser("verdict", help="harness_report.json から継続判定を算出する")
+    p.add_argument("target")
+    p.add_argument("--report",
+                   default=os.path.join(REPO, "coverage", "harness_report.json"))
+
+    p = sub.add_parser(
+        "can-skip",
+        help="既存のテストだけで基準を満たしているか判定する（満たしていれば生成を飛ばす）")
     p.add_argument("target")
     p.add_argument("--report",
                    default=os.path.join(REPO, "coverage", "harness_report.json"))
@@ -973,7 +1074,7 @@ def main() -> int:
         if not completed and not args.force:
             print(
                 "Excel 項目書がまだ生成されていないため、セッションを破棄できません。\n"
-                "SKILL.md 手順10 を先に実行してください:\n"
+                "SKILL.md 手順11 を先に実行してください:\n"
                 "  Agent ツールで test-doc-excel-generator を起動する\n"
                 "  （直接なら python3 scripts/gen_test_excel.py）\n"
                 "生成が成功すると completed_at が記録され、このコマンドが通るようになります。\n"
@@ -1011,6 +1112,25 @@ def main() -> int:
         loop = compute_verdict(report, args.target, load_state(create=False))
         print(json.dumps(loop, ensure_ascii=False, indent=2))
         return 0
+
+    if args.cmd == "can-skip":
+        try:
+            with open(args.report, encoding="utf-8") as f:
+                report = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            print(f"{args.report} を読めません", file=sys.stderr)
+            return 2
+        if report.get("loop", {}).get("target") not in (None, args.target):
+            print("⚠ レポートは別の対象のものです。対象のテストファイルで "
+                  "test_harness.sh を実行してから判定してください", file=sys.stderr)
+            return 2
+        res = can_skip_generation(args.target, report, load_state(create=False))
+        mark = "■ 生成を飛ばしてよい" if res["can_skip"] else "▶ 生成が必要"
+        print(f"{mark}: {args.target}")
+        print(f"      理由: {res['reason']}")
+        if res["loop"] and not res["spec_checked"]:
+            print("      ※ 承認済みの仕様書が見つからないため、仕様 ID の網羅は判定していない")
+        return 0 if res["can_skip"] else 1
 
     if args.cmd == "finish":
         finish(args.target, args.status, args.reason)

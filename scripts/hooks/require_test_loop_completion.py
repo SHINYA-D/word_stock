@@ -6,7 +6,7 @@
 test-loop の二重ループ（内部3回 / 外部3回）は「回しすぎ」を止める上限であって、
 「あと1回回せ」を強制する力を持たない。`loop.verdict` が `continue` でも、
 ループを次の周に進める主体は LLM なので、途中でユーザーに制御を返してしまえば
-そこで工程が終わる。SKILL.md「大原則: テスト工程は必ず最後（手順10 Excel 生成）
+そこで工程が終わる。SKILL.md「大原則: テスト工程は必ず最後（手順11 Excel 生成）
 までやり切る」が自然言語のお願いのままになっているのはこのためである。
 
 Stop hook は「LLM がターンを終えようとする瞬間」に割り込める唯一のタイミング。
@@ -138,7 +138,7 @@ def pending_targets(state: dict, harness_report) -> list[str]:
     harness_report.py」）。ただし state["scope"] が設定されていれば
     （＝ユーザーが一部のファイルだけを依頼したセッション）その範囲だけを見る。
     scope を無視すると、2ファイルだけの依頼でも「残り48件やれ」と
-    押し戻してしまい、SKILL.md 手順10 の部分依頼の扱いと矛盾する。
+    押し戻してしまい、SKILL.md 手順11 の部分依頼の扱いと矛盾する。
 
     coverage_exclusions.txt の登録済みファイルは常に除く。
     """
@@ -178,16 +178,16 @@ def decide(state: dict, loop_state, harness_report) -> str | None:
         return (
             f"テスト工程が未完了です（対象: {target}）。"
             f"ループ判定は continue。理由: {loop.get('reason')}\n"
-            "SKILL.md 手順2〜5 に従って差し戻し・再生成・ハーネス再実行を続けてください。"
+            "SKILL.md 手順3〜6 に従って差し戻し・再生成・ハーネス再実行を続けてください。"
             "上限に達した場合は compute_verdict が stop を返すので、"
             "回数は自分で数えないこと。"
         )
 
     if loop is not None:
-        # stop なのに finish されていない＝手順6の記録が抜けている
+        # stop なのに finish されていない＝手順7の記録が抜けている
         return (
             f"{loop.get('target')} のループ判定は stop（{loop.get('reason')}）ですが、"
-            "まだ done / skipped として記録されていません。SKILL.md 手順6の "
+            "まだ done / skipped として記録されていません。SKILL.md 手順7の "
             "`python3 scripts/loop_state.py finish <lib パス> --status done` "
             "（または --status skipped --reason ...）を実行してください。"
         )
@@ -205,7 +205,7 @@ def decide(state: dict, loop_state, harness_report) -> str | None:
         )
         return (
             f"未消化の対象が {len(pending)} 件残っています。"
-            "SKILL.md 手順1に戻り、最上位 Tier の対象を1つ選んで "
+            "SKILL.md 手順2に戻り、最上位 Tier の対象を1つ選んで "
             "`begin-attempt` → エージェント起動 → ハーネス実行を続けてください。\n"
             f"{head}{more}\n"
             "テストを書かないと決めたファイルは test/coverage_exclusions.txt に "
@@ -216,16 +216,16 @@ def decide(state: dict, loop_state, harness_report) -> str | None:
     return (
         "全対象が done / skipped になりましたが、テスト工程はまだ終わっていません。"
         "state.json に completed_at が立っていません。\n"
-        "SKILL.md 手順7〜11 をやり切ってください:\n"
-        "  7. bash scripts/test_harness.sh（引数なし・1回だけ）\n"
-        "  8. architecture-guard による規約レビュー\n"
-        "  9. 網羅性・必要性の自己監査\n"
-        " 10. test-doc-excel-generator で Excel 項目書を生成（問題が残っていても必ず実行）\n"
+        "SKILL.md 手順8〜12 をやり切ってください:\n"
+        "  8. bash scripts/test_harness.sh（引数なし・1回だけ）\n"
+        "  9. architecture-guard による規約レビュー\n"
+        " 10. 網羅性・必要性の自己監査\n"
+        " 11. test-doc-excel-generator で Excel 項目書を生成（問題が残っていても必ず実行）\n"
         "     直接なら python3 scripts/gen_test_excel.py\n"
-        " 11. python3 scripts/loop_state.py end-session\n"
+        " 12. python3 scripts/loop_state.py end-session\n"
         "\n"
         "completed_at は gen_test_excel.py が Excel の保存に成功したときにのみ"
-        "記録されます。つまりこの関所を解除するには手順10 を完走させるしかありません"
+        "記録されます。つまりこの関所を解除するには手順11 を完走させるしかありません"
         "（state.json の手編集は block_generated_file_edit.sh が拒否します）。"
         "completed_at が無いまま end-session を打っても拒否されます。"
     )
