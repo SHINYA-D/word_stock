@@ -760,9 +760,12 @@ WARNING_KINDS = [
     ("プロダクションコードのバグ", True),
     ("テスト失敗", True),
     ("テスト漏れ", True),
+    ("項目書とテストコードの不一致", True),
+    ("仕様のずれ", True),
     ("90%未満（理由あり）", False),
     ("対象外に行番号なし", False),
     ("仕様漏れ", False),
+    ("依頼範囲外の変更", False),
 ]
 
 
@@ -920,6 +923,45 @@ def collect_warnings(files, report, state, scoped: bool):
                 "detail": f"仕様書: {sc['spec']}",
                 "action": "境界値1つにつきテストを1件にする",
             })
+        # 仕様のずれ（項目書に書き留めた指紋と現在の仕様書の食い違い）
+        for d in sc.get("drifted") or []:
+            moved = f" → {d['moved_to']} に移動" if d.get("moved_to") else ""
+            out.append({
+                "kind": "仕様のずれ", "target": fi["target"],
+                "content": f"{d['id']}: {d['kind']}{moved}",
+                "detail": f"仕様書: {sc['spec']}（記録 #{d['recorded']} / 現在 #{d['current'] or 'なし'}）",
+                "action": "移動ならタグを貼り替える（テストは触らない）。"
+                          "内容変更ならその ID のテストを作り直す",
+            })
+
+    # 項目書とテストコードの不一致（doc_sync）
+    for fi in files:
+        ds = loop_state.doc_test_sync(_norm(fi["target"]), (report or {}).get("tests") or {})
+        if not ds:
+            continue
+        if ds["doc_only"]:
+            out.append({
+                "kind": "項目書とテストコードの不一致", "target": fi["target"],
+                "content": f"項目書にあるがテストが存在しない {len(ds['doc_only'])} 件",
+                "detail": " ／ ".join(n[:60] for n in ds["doc_only"][:8]),
+                "action": "テストを追加する（または項目書の行を削除する）",
+            })
+        if ds["test_only"]:
+            out.append({
+                "kind": "項目書とテストコードの不一致", "target": fi["target"],
+                "content": f"テストはあるが項目書に無い {len(ds['test_only'])} 件",
+                "detail": " ／ ".join(n[:60] for n in ds["test_only"][:8]),
+                "action": "項目書に行を追加する",
+            })
+
+    # 依頼範囲の外のテスト関連ファイルを変更している
+    for rel in (state or {}).get("out_of_scope_writes") or []:
+        out.append({
+            "kind": "依頼範囲外の変更", "target": rel,
+            "content": "今回の依頼範囲（scope）の外のテスト関連ファイルを変更している",
+            "detail": "共有ヘルパー（test/helpers/**）の変更は他の画面のテストにも影響する",
+            "action": "変更の理由を確認し、必要なら全体ハーネスで回帰を確認する",
+        })
 
     order = {k: i for i, (k, _) in enumerate(WARNING_KINDS)}
     out.sort(key=lambda w: order[w["kind"]])

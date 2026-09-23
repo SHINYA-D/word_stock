@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import re
@@ -67,6 +68,37 @@ PENDING_MARK = "判断保留"
 
 _NO_LINE_WARNING = "項目書の「## 対象外」に行番号が書かれていない（段階移行中）"
 
+_NO_DIGEST_WARNING = (
+    "項目書の「仕様ID」列に仕様内容の指紋（`SMP-D12 #a3f1c2` の `#...`）が無いため、"
+    "仕様書の変更を検出できない（段階移行中）"
+)
+
+# 仕様書の章ごとに「振る舞いを決めている列」の位置（0 起点。0 列目は ID）。
+# 根拠・確定度は metadata なので指紋に含めない（決定を書き足しただけで
+# 「仕様が変わった」と誤検出しないため）。
+_SPEC_CONTENT_COLS = {
+    2: (1, 3),     # ルール / 境界値
+    3: (1, 2),     # 条件 / 期待される動作
+    4: (1, 2),     # 条件 / 期待される状態
+    5: (1, 2, 3),  # メソッド / 条件 / 期待される結果
+    6: (1, 2),
+}
+
+# 失敗メッセージから「テスト側の問題」と断定できるパターン。
+# 操作対象が見つからない・当たらない・環境が組めていない類は、期待値の不一致ではない。
+_TEST_SIDE_MARKERS = (
+    'used in a call to "tap',
+    'used in a call to "enterText',
+    'used in a call to "drag',
+    'used in a call to "fling',
+    'used in a call to "longPress',
+    "would not hit test",
+    "No GoRouter found in context",
+    "pumpAndSettle timed out",
+    "A Timer is still pending",
+    "Could not find a generator",
+)
+
 
 # --------------------------------------------------------------------------- #
 # ステートの読み書き
@@ -87,6 +119,7 @@ def _new_state() -> dict:
         "done": [],
         "skipped": {},
         "production_bugs": [],
+        "out_of_scope_writes": [],
         "completed_at": None,
         "excel_path": None,
         "scope": None,
@@ -236,6 +269,40 @@ def add_bug(bug: dict, path: str = STATE_PATH) -> dict:
     state["production_bugs"].append(bug)
     save_state(state, path)
     return state
+
+
+def record_out_of_scope_write(rel: str, path: str = STATE_PATH) -> dict:
+    """scope 外のテスト関連ファイルへの書き込みを記録する（修正 B-2）。
+
+    拒否はしない（共有ヘルパーへの追加など、必要になることが実際にある）。
+    代わりに記録して、最終報告と Excel で「依頼範囲の外を触った」と見えるようにする。
+    """
+    state = load_state(path)
+    hits = state.setdefault("out_of_scope_writes", [])
+    if rel not in hits:
+        hits.append(rel)
+        save_state(state, path)
+    return state
+
+
+def allowed_test_paths(targets: list[str]) -> set[str]:
+    """scope の対象ファイルに対応する、書き込んでよいテスト・項目書のパス。
+
+    まだ存在しないファイル（初回生成）も許可できるよう、実ファイルの探索結果に
+    加えて規約どおりのミラーパスも含める。
+    """
+    out: set[str] = set()
+    for t in targets or []:
+        rel = t.replace("\\", "/")
+        out.update(test_paths_for(t))
+        d = doc_path_for(t)
+        if d:
+            out.add(os.path.relpath(d, REPO).replace("\\", "/"))
+        if rel.startswith("lib/") and rel.endswith(".dart"):
+            body = rel[len("lib/"):-len(".dart")]
+            out.add(f"test/{body}_test.dart")
+            out.add(f"test/test_cases/{body}_test_cases.md")
+    return out
 
 
 def set_scope(targets: list[str] | None, path: str = STATE_PATH) -> dict:
@@ -523,6 +590,20 @@ def boundary_value_count(cell: str) -> int:
     )
 
 
+def spec_digest(chapter: int, cells: list[str]) -> str:
+    """仕様書 1 行の「振る舞いを決めている内容」の指紋（6 桁）。
+
+    ID は並び順の連番なので、改訂で行が挿入されると別の項目を指すようになる
+    （spec-authoring の「ID は振り直さない」が破られたとき）。指紋を項目書に
+    書き留めておけば、番号ではなく内容で対応を確かめられる。
+    """
+    cols = _SPEC_CONTENT_COLS.get(chapter, (1, 2))
+    parts = [re.sub(r"\s+", "", cells[i]) for i in cols if i < len(cells)]
+    if not any(parts):
+        return ""
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:6]
+
+
 def _read_frontmatter(text: str) -> dict:
     m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
     if not m:
@@ -576,6 +657,7 @@ def parse_spec(path: str) -> dict | None:
             "abolished": cells[-1] == "廃止",
             "layer": "",
             "boundary": 0,
+            "digest": spec_digest(chapter, cells),
         }
         if chapter == 2 and len(cells) >= 4:
             item["layer"] = cells[2]
@@ -628,14 +710,41 @@ def read_case_spec_ids(doc: str) -> tuple[str | None, list[dict]]:
         if header is None or set(line.strip()) <= set("|-: "):
             continue
         row = dict(zip(header, cells))
+        id_cell = row.get("仕様ID", "")
         cases.append({"name": row.get("テスト名", ""),
-                      "ids": expand_spec_ids(row.get("仕様ID", ""))})
+                      "ids": expand_spec_ids(id_cell),
+                      "digests": parse_recorded_digests(id_cell),
+                      "status": row.get("状態", "")})
     return spec, cases
 
 
-def find_spec_for(target: str, doc_spec: str | None = None) -> dict | None:
+_DIGEST_RE = re.compile(r"([A-Z]{2,5}-[A-Z]\d{2,})\s*#([0-9a-f]{4,8})")
+
+
+def parse_recorded_digests(cell: str) -> dict[str, str]:
+    """項目書の「仕様ID」列に書かれた指紋を読む（`SMP-D12 #a3f1c2` の形）。
+
+    指紋が無い項目書（段階移行中の既存ファイル）では空の辞書になり、
+    仕様書の変更検出はスキップされる。
+    """
+    return {m.group(1): m.group(2) for m in _DIGEST_RE.finditer(cell or "")}
+
+
+def norm_test_name(s: str) -> str:
+    """テスト名の照合用に空白と記号のゆれを落とす。
+
+    実行されたテスト名は `group` 名が前に付くので、包含で突き合わせる。
+    """
+    return re.sub(r"[\s　\[\]（）()「」『』・,、.。:：/／]+", "", s or "")
+
+
+def find_spec_for(target: str, doc_spec: str | None = None,
+                  require_approved: bool = True) -> dict | None:
     """対象ファイルの承認済み仕様書。項目書の `| 仕様書 |` 行を優先し、
-    無ければ frontmatter の `targets` に対象（または対象を含むディレクトリ）が載る仕様書を探す。"""
+    無ければ frontmatter の `targets` に対象（または対象を含むディレクトリ）が載る仕様書を探す。
+
+    `require_approved=False` にすると `status` を問わず探す（未承認の検出用）。
+    """
     candidates = []
     if doc_spec:
         candidates.append(os.path.join(REPO, doc_spec))
@@ -643,7 +752,9 @@ def find_spec_for(target: str, doc_spec: str | None = None) -> dict | None:
         candidates = glob.glob(os.path.join(SPEC_DIR, "**", "*.md"), recursive=True)
     for path in candidates:
         spec = parse_spec(path)
-        if not spec or spec["status"] != "approved":
+        if not spec:
+            continue
+        if require_approved and spec["status"] != "approved":
             continue
         if doc_spec or any(
             target == t or (t.endswith("/") and target.startswith(t))
@@ -653,11 +764,28 @@ def find_spec_for(target: str, doc_spec: str | None = None) -> dict | None:
     return None
 
 
+def unapproved_spec_for(target: str) -> dict | None:
+    """対象に対応する仕様書はあるが、まだ承認されていない場合にそれを返す。
+
+    `status: draft` のままだと `spec_coverage()` が None を返し、仕様 ID の網羅も
+    境界値も判定されないまま「行カバレッジだけで合格」になってしまう（fail-open）。
+    その状態を呼び出し側が検出できるようにする。
+    """
+    doc = doc_path_for(target)
+    doc_spec, _ = read_case_spec_ids(doc) if doc else (None, [])
+    spec = find_spec_for(target, doc_spec, require_approved=False)
+    if spec and spec["status"] != "approved":
+        return spec
+    return None
+
+
 def spec_coverage(target: str) -> dict | None:
     """対象ファイルの仕様 ID の網羅状況。仕様書が無い対象は None。
 
     - missing: 担当する仕様 ID のうち、どのテストケースからも引用されていないもの
     - boundary_short: 2.2 の ID で、引用するテストケースが境界値の数より少ないもの
+    - drifted: 項目書に書き留めた指紋と現在の仕様書の内容が食い違う ID
+      （番号の振り直し、または同じ ID のまま内容が変わったケース）
     """
     doc = doc_path_for(target)
     doc_spec, cases = read_case_spec_ids(doc) if doc else (None, [])
@@ -675,6 +803,30 @@ def spec_coverage(target: str) -> dict | None:
         if spec["items"][i]["chapter"] == 2
         and 0 < cited.get(i, 0) < spec["items"][i]["boundary"]
     ]
+    # 指紋の突き合わせ。現在の仕様書の指紋から逆引きして「内容が別の ID に移った」
+    # ケース（＝番号の振り直し）と「ID は同じで内容が変わった」ケースを区別する。
+    by_digest: dict[str, list[str]] = {}
+    for i, it in spec["items"].items():
+        if it["digest"]:
+            by_digest.setdefault(it["digest"], []).append(i)
+    recorded: dict[str, str] = {}
+    for c in cases:
+        recorded.update(c["digests"])
+    drifted = []
+    for i, rec in sorted(recorded.items()):
+        item = spec["items"].get(i)
+        cur = item["digest"] if item else ""
+        if cur == rec:
+            continue
+        moved = [m for m in by_digest.get(rec, []) if m != i]
+        drifted.append({
+            "id": i,
+            "recorded": rec,
+            "current": cur,
+            "moved_to": moved[0] if len(moved) == 1 else None,
+            "kind": "移動" if len(moved) == 1 else ("消滅" if not item else "内容変更"),
+        })
+
     return {
         "target": target,
         "spec": spec["path"],
@@ -683,6 +835,9 @@ def spec_coverage(target: str) -> dict | None:
         "cited": {i: cited.get(i, 0) for i in required},
         "missing": [i for i in required if not cited.get(i)],
         "boundary_short": boundary_short,
+        "drifted": drifted,
+        "digest_recorded": bool(recorded),
+        "current_digests": {i: spec["items"][i]["digest"] for i in required},
         "boundary_need": {
             i: spec["items"][i]["boundary"] for i in required
             if spec["items"][i]["chapter"] == 2
@@ -701,11 +856,136 @@ def format_spec_warning(sc: dict) -> str | None:
     return "仕様漏れ … " + " ／ ".join(parts) if parts else None
 
 
+def format_drift_warning(sc: dict) -> str | None:
+    """仕様書の変更（ずれ）を伝える1行。貼り替え先が分かるものは併記する。"""
+    if not sc.get("digest_recorded"):
+        return _NO_DIGEST_WARNING
+    drifted = sc.get("drifted") or []
+    if not drifted:
+        return None
+    moved = [d for d in drifted if d["moved_to"]]
+    other = [d for d in drifted if not d["moved_to"]]
+    parts = []
+    if moved:
+        parts.append("貼り替え候補（内容が別の ID に移っている）: " + ", ".join(
+            f"{d['id']} → {d['moved_to']}" for d in moved))
+    if other:
+        parts.append("要判断（内容が変わった／消滅した）: " + ", ".join(
+            f"{d['id']}（{d['kind']}）" for d in other))
+    return f"仕様のずれ {len(drifted)} 件 … " + " ／ ".join(parts)
+
+
+# --------------------------------------------------------------------------- #
+# 項目書とテストコードの照合（修正 A）
+# --------------------------------------------------------------------------- #
+def doc_test_sync(target: str, tests: dict) -> dict | None:
+    """項目書に書かれたケースと、実際に実行されたテストを突き合わせる。
+
+    仕様 ID の網羅は項目書 MD だけを見て判定しているため、「項目書に書いてあるが
+    テストコードに存在しない」ケースが素通りしてしまう。ここでは同じ実行の
+    machine log に出た**全テスト名**（成功も含む）と項目書を照合する。
+
+    過去の実行結果は使わない。見ているのはどちらも「今の状態」。
+
+    - doc_only  : 項目書にあるが実行されていない（テストが存在しない）
+    - test_only : 実行されたが項目書に無い
+    - status_mismatch: 項目書の「状態」列と実行結果が食い違う（警告のみ）
+    """
+    doc = doc_path_for(target)
+    if not doc:
+        return None
+    _, cases = read_case_spec_ids(doc)
+    if not cases:
+        return None
+    stem = _stem(target)
+    ran = [
+        t for t in (tests.get("all") or [])
+        if not t.get("file") or _stem(t["file"]) == stem
+    ]
+    if not ran:
+        return None
+
+    ran_norm = [(norm_test_name(t["name"]), t) for t in ran]
+    used: set[int] = set()
+    doc_only, status_mismatch = [], []
+    for c in cases:
+        key = norm_test_name(c["name"])
+        hit = None
+        for idx, (rn, t) in enumerate(ran_norm):
+            if not key or not rn:
+                continue
+            if key in rn or rn in key:
+                hit = (idx, t)
+                break
+        if hit is None:
+            doc_only.append(c["name"])
+            continue
+        used.add(hit[0])
+        ok = hit[1].get("result") == "success"
+        declared_ng = "❌" in (c["status"] or "")
+        if ok == declared_ng:
+            status_mismatch.append({
+                "name": c["name"],
+                "declared": (c["status"] or "").strip(),
+                "actual": "OK" if ok else "NG",
+            })
+    test_only = [t["name"] for i, (_, t) in enumerate(ran_norm) if i not in used]
+    return {
+        "target": target,
+        "doc": os.path.relpath(doc, REPO).replace("\\", "/"),
+        "doc_cases": len(cases),
+        "ran_tests": len(ran),
+        "doc_only": doc_only,
+        "test_only": test_only,
+        "status_mismatch": status_mismatch,
+    }
+
+
+def format_doc_sync_warning(ds: dict) -> str | None:
+    """項目書とテストコードの食い違いを伝える1行。"""
+    if not ds:
+        return None
+    parts = []
+    if ds["doc_only"]:
+        parts.append(f"項目書にあるがテストが存在しない {len(ds['doc_only'])} 件: "
+                     + " ／ ".join(n[:40] for n in ds["doc_only"][:5]))
+    if ds["test_only"]:
+        parts.append(f"テストはあるが項目書に無い {len(ds['test_only'])} 件: "
+                     + " ／ ".join(n[:40] for n in ds["test_only"][:5]))
+    if ds["status_mismatch"]:
+        parts.append(f"項目書の「状態」列が実行結果と違う {len(ds['status_mismatch'])} 件"
+                     "（状態列は参考値。実行結果が正）")
+    return "項目書とテストコードの不一致 … " + " ／ ".join(parts) if parts else None
+
+
+# --------------------------------------------------------------------------- #
+# 失敗理由の分類（修正 E）
+# --------------------------------------------------------------------------- #
+def classify_failure(message: str) -> str:
+    """失敗メッセージから「テスト側」か「プロダクション側」かを見分ける。
+
+    操作対象が見つからない・タップが当たらない・テスト環境が組めていない類は、
+    期待値の不一致ではないのでプロダクションコードのバグではない。
+    ここで "test" と出たものは、バグとして記録してもループ判定から除外しない
+    （＝誤登録してもループを抜けられない）。
+    """
+    msg = message or ""
+    if any(m in msg for m in _TEST_SIDE_MARKERS):
+        return "test"
+    if "Expected:" in msg and "Actual:" in msg:
+        return "production"
+    return "unknown"
+
+
 def known_bug_failures(failures: list[dict], state: dict) -> list[dict]:
     """記録済みのバグ（production_bugs）の仕様 ID だけで説明できる失敗。
 
     テスト名の `[SMP-D01]` が、記録済みのバグの症状に書かれた仕様 ID にすべて含まれる失敗は
     「仕様どおりの期待値で落ちた既知のバグ」なので、ループを回し続ける理由にならない。
+
+    ただし失敗メッセージがテスト側の問題を示しているもの（操作対象が見つからない等）は
+    除外しない。バグとして登録すればループ判定から外れるため、放っておくと
+    「誤登録すればループを抜けられる」近道になってしまう。
     """
     bug_ids: set[str] = set()
     for bug in (state or {}).get("production_bugs", []):
@@ -714,6 +994,25 @@ def known_bug_failures(failures: list[dict], state: dict) -> list[dict]:
         return []
     out = []
     for fl in failures:
+        if classify_failure(fl.get("message", "")) == "test":
+            continue
+        ids = expand_spec_ids(fl.get("name", ""))
+        if ids and ids <= bug_ids:
+            out.append(fl)
+    return out
+
+
+def misfiled_bug_failures(failures: list[dict], state: dict) -> list[dict]:
+    """バグとして記録されているが、失敗メッセージはテスト側の問題を示しているもの。"""
+    bug_ids: set[str] = set()
+    for bug in (state or {}).get("production_bugs", []):
+        bug_ids |= expand_spec_ids(bug.get("symptom", ""))
+    if not bug_ids:
+        return []
+    out = []
+    for fl in failures:
+        if classify_failure(fl.get("message", "")) != "test":
+            continue
         ids = expand_spec_ids(fl.get("name", ""))
         if ids and ids <= bug_ids:
             out.append(fl)
@@ -795,9 +1094,41 @@ def _goal_verdict(report: dict, target: str | None, state: dict,
             "（仕様どおりの期待値で落ちているため、テストを直さない）"
         )
         failures = [fl for fl in failures if fl not in known]
+    misfiled = misfiled_bug_failures(failures, state)
+    if misfiled:
+        loop["warnings"].append(
+            f"バグとして記録されているが、失敗メッセージはテスト側の問題を示している "
+            f"{len(misfiled)} 件（除外しない）: "
+            + " ／ ".join(fl.get("name", "")[:40] for fl in misfiled[:3])
+        )
     if failures:
         loop["verdict"] = "continue"
         loop["reason"] = f"テスト失敗 {len(failures)} 件"
+        return loop
+
+    # 1.5 項目書とテストコードの不一致（修正 A）。
+    # 仕様 ID の網羅は項目書だけを見て判定しているので、ここが食い違っていると
+    # 「項目書に書いてあるがテストが存在しない」まま合格してしまう。
+    ds = report.get("doc_sync")
+    if ds and ds.get("target") == target:
+        if ds.get("doc_only") or ds.get("test_only"):
+            loop["verdict"] = "continue"
+            loop["reason"] = (
+                f"項目書とテストコードが一致していない"
+                f"（項目書のみ {len(ds['doc_only'])} 件 / テストのみ {len(ds['test_only'])} 件）"
+            )
+            return loop
+
+    # 1.6 仕様書のずれ（修正 D）。
+    # ずれていると missing / boundary_short の数字そのものが信用できなくなるため、
+    # 仕様漏れ（警告のみ）より強く、先に解消させる。
+    sc = report.get("spec")
+    if sc and sc.get("target") == target and sc.get("drifted"):
+        loop["verdict"] = "continue"
+        loop["reason"] = (
+            f"仕様書の内容が変わった ID {len(sc['drifted'])} 件"
+            "（貼り直しが必要。仕様漏れ・境界値の判定は保留）"
+        )
         return loop
 
     # 限定分母外（Widget テストの Page 等）は green 判定のみで完了とする
@@ -925,6 +1256,9 @@ def can_skip_generation(target: str, report: dict, state: dict) -> dict:
          上限到達による stop は除く＝目標に達していないため）
       2. 仕様書がある対象では、テストの無い仕様 ID が無い
       3. 同じく、境界値のテストが足りない仕様 ID が無い
+      4. 仕様書の内容が変わった ID が無い（修正 D）
+      5. 項目書とテストコードが一致している（修正 A）
+      6. 仕様書が未承認（draft）のまま網羅判定が無効になっていない（修正 C）
 
     判定材料は「そのテストファイルでハーネスを回した直後のレポート」であること。
     """
@@ -953,6 +1287,25 @@ def can_skip_generation(target: str, report: dict, state: dict) -> dict:
         if sc.get("boundary_short"):
             reasons.append("境界値のテストが足りない仕様 ID: " + ", ".join(
                 f"{b['id']}（{b['have']}/{b['need']} 件）" for b in sc["boundary_short"]))
+        if sc.get("drifted"):
+            reasons.append(f"仕様書の内容が変わった ID {len(sc['drifted'])} 件（貼り直しが必要）")
+    else:
+        # 未承認の仕様書があるのに網羅判定が効かない状態で「飛ばしてよい」と
+        # 答えると、テストを1件も足さないまま工程が終わってしまう（fail-open）。
+        un = unapproved_spec_for(target)
+        if un:
+            reasons.append(
+                f"仕様書 {un['path']} が status: {un['status']} のため"
+                "仕様 ID の網羅を判定できない（承認するか、ユーザーに確認すること）"
+            )
+
+    ds = report.get("doc_sync")
+    if ds and ds.get("target") == target:
+        if ds.get("doc_only"):
+            reasons.append(f"項目書にあるがテストが存在しない {len(ds['doc_only'])} 件")
+        if ds.get("test_only"):
+            reasons.append(f"テストはあるが項目書に無い {len(ds['test_only'])} 件")
+
     return {
         "target": target,
         "can_skip": not reasons,
@@ -960,6 +1313,7 @@ def can_skip_generation(target: str, report: dict, state: dict) -> dict:
                   if not reasons else " ／ ".join(reasons),
         "loop": loop,
         "spec_checked": bool(sc),
+        "unapproved_spec": (unapproved_spec_for(target) or {}).get("path") if not sc else None,
     }
 
 
@@ -1029,6 +1383,16 @@ def main() -> int:
     p.add_argument("--symptom", required=True)
     p.add_argument("--evidence", default="")
     p.add_argument("--recommendation", default="")
+    p.add_argument("--force", action="store_true",
+                   help="失敗メッセージがテスト側の問題を示していても登録する")
+    p.add_argument("--report",
+                   default=os.path.join(REPO, "coverage", "harness_report.json"))
+
+    p = sub.add_parser(
+        "triage",
+        help="失敗テストを「テスト側 / プロダクション側」に分類して表示する")
+    p.add_argument("--report",
+                   default=os.path.join(REPO, "coverage", "harness_report.json"))
 
     args = ap.parse_args()
 
@@ -1128,7 +1492,10 @@ def main() -> int:
         mark = "■ 生成を飛ばしてよい" if res["can_skip"] else "▶ 生成が必要"
         print(f"{mark}: {args.target}")
         print(f"      理由: {res['reason']}")
-        if res["loop"] and not res["spec_checked"]:
+        if res.get("unapproved_spec"):
+            print(f"      ⚠ 仕様書 {res['unapproved_spec']} が未承認のため、"
+                  "仕様 ID の網羅判定が無効になっています")
+        elif res["loop"] and not res["spec_checked"]:
             print("      ※ 承認済みの仕様書が見つからないため、仕様 ID の網羅は判定していない")
         return 0 if res["can_skip"] else 1
 
@@ -1138,12 +1505,68 @@ def main() -> int:
               + (f"（{args.reason}）" if args.reason else ""))
         return 0
 
+    if args.cmd == "triage":
+        try:
+            with open(args.report, encoding="utf-8") as f:
+                report = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            print(f"{args.report} を読めません", file=sys.stderr)
+            return 2
+        fails = (report.get("tests", {}) or {}).get("failures", [])
+        if not fails:
+            print("失敗しているテストはありません")
+            return 0
+        label = {"test": "テスト側", "production": "プロダクション側", "unknown": "判別不能"}
+        for fl in fails:
+            cause = fl.get("likely_cause") or classify_failure(fl.get("message", ""))
+            head = (fl.get("message") or "").strip().splitlines()
+            print(f"[{label[cause]}] {fl.get('name', '')[:70]}")
+            if head:
+                print(f"    {head[0][:110]}")
+        print("\n※「テスト側」はテストコードの不備です。バグとして登録しても"
+              "ループ判定から除外されません（誤登録でループを抜けられない仕組み）")
+        return 0
+
     if args.cmd == "bug":
+        # 失敗メッセージがテスト側の問題を示しているものをバグとして登録しようと
+        # していないか確かめる。ここを通すと Excel に赤字で載り、下流では検証されない。
+        suspect = []
+        try:
+            with open(args.report, encoding="utf-8") as f:
+                report = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            report = {}
+        target_ids = expand_spec_ids(args.symptom)
+        for fl in (report.get("tests", {}) or {}).get("failures", []):
+            ids = expand_spec_ids(fl.get("name", ""))
+            cause = fl.get("likely_cause") or classify_failure(fl.get("message", ""))
+            if cause == "test" and ids and ids & target_ids:
+                suspect.append(fl)
+        if suspect and not args.force:
+            print(
+                "この仕様 ID の失敗は、メッセージがテスト側の問題を示しています。\n"
+                "プロダクションコードのバグとして登録する前に、テストコードを見直してください:\n",
+                file=sys.stderr,
+            )
+            for fl in suspect:
+                first = (fl.get("message") or "").strip().splitlines()
+                print(f"  - {fl.get('name', '')[:70]}", file=sys.stderr)
+                if first:
+                    print(f"      {first[0][:110]}", file=sys.stderr)
+            print(
+                "\n操作対象が見つからない / タップが当たらない / テスト環境が組めていない類は、"
+                "期待値の不一致ではありません。\n"
+                "本当にプロダクションコードのバグなら --force を付けてください。",
+                file=sys.stderr,
+            )
+            return 1
         add_bug({
             "path": args.path, "line": args.line, "symptom": args.symptom,
             "evidence": args.evidence, "recommendation": args.recommendation,
         })
         print(f"production_bugs に追加しました: {args.path}:{args.line}")
+        if suspect and args.force:
+            print("⚠ 失敗メッセージはテスト側の問題を示していましたが、--force で登録しました")
         return 0
 
     return 0

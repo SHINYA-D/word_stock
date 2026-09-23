@@ -86,6 +86,22 @@ fvm flutter run --dart-define=USE_MOCKS=true
   該当ファイルは Excel の「要確認一覧」に「テスト漏れ」として載る
 - 対象外登録の理由は Excel 項目書の「対象外一覧」シートに集約される。テストを後から追加したり
   ファイルを消したら `coverage_exclusions.txt` の該当行も削除する（残ると `stale_exclusions` 警告。CI は落とさない）
+- **項目書とテストコードの一致ゲート**: ハーネスは同じ実行で走った**全テスト名**（成功も含む）と
+  項目書のケース一覧を突き合わせ、`doc_sync.doc_only`（項目書にあるがテストが無い）/
+  `doc_sync.test_only`（テストはあるが項目書に無い）があると `verdict` を `continue` にする。
+  仕様 ID の網羅（`spec.missing`）は項目書だけを見て判定しているため、この照合が無いと
+  「項目書に書いてあるがテストコードに存在しない」ケースが素通りする
+- **仕様のずれゲート**: 項目書の `仕様ID` 列には仕様内容の指紋を `SMP-D12 #a3f1c2` の形で書く。
+  ハーネスが現在の仕様書と突き合わせ、食い違い（`spec.drifted`）があれば `continue` にする。
+  `移動`（内容が別 ID に移った＝ ID の振り直し）はタグの貼り替えだけで済み、
+  `内容変更`（ID は同じで中身が変わった）はその ID のテストを作り直す
+- **仕様書が未承認（`draft`）のときは `can-skip` が必ず「生成が必要」を返す。**
+  `draft` だと仕様 ID の網羅も境界値も判定されず、行カバレッジだけで合格してしまうため
+  （fail-open）。この場合はループを進めず、承認するかをユーザーに確認する
+- **失敗理由は自動分類される。** `tests.failures[].likely_cause` が `test`
+  （操作対象が見つからない・タップが当たらない・テスト環境の不備）のものは、
+  プロダクションコードのバグとして登録しても `verdict` から除外されない
+  （＝誤登録でループを抜けられない）。一覧は `python3 scripts/loop_state.py triage`
 
 ### 作法
 
@@ -93,7 +109,13 @@ fvm flutter run --dart-define=USE_MOCKS=true
 - テスト名は「○○の場合、△△が起きる」形式
 - テストコードを生成・変更したら、対応する項目書 MD（`test/test_cases/**/*_test_cases.md`）を必ずペアで更新する
   （フォーマットは `.claude/skills/excel-testdoc-authoring/SKILL.md`、既存の
-  `test/test_cases/infrastructure/repositories/folder_repository_impl_test_cases.md` を正とする）
+  `test/test_cases/infrastructure/repositories/folder_repository_impl_test_cases.md` を正とする）。
+  **項目書の行とテストコードのケースは 1 対 1。** ハーネスの `doc_sync` が機械的に照合する。
+  なお項目書の `状態` 列（✅/❌）は自己申告の参考値で、実行結果が正（Excel が上書きする）
+- **依頼範囲（`start-session --scope`）の外のテスト関連ファイルを変更すると記録される**
+  （`scripts/hooks/record_test_scope.py` → `out_of_scope_writes`）。拒否はしないが、
+  ハーネスの警告・最終報告・Excel の「要確認一覧」に載る。共有ヘルパー
+  （`test/helpers/**`）は他の画面のテストも使うので、既存のフィールド・関数は壊さず追加だけにする
 - テスト実行・カバレッジ計測は `fvm flutter test` の直叩きではなく `bash scripts/test_harness.sh [<path>]` 経由で行う
 - **ループの継続/終了は自分で判断せず、回数も数えない。** `harness_report.json` の `loop.verdict`
   （`scripts/loop_state.py` が算出）に従う。内部・外部のループ回数は `.test_loop/state.json` で

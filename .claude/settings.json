@@ -12,7 +12,8 @@
       "Write(//private/tmp/claude-501/**)",
       "Read(//tmp/claude-501/**)",
       "Edit(//tmp/claude-501/**)",
-      "Write(//tmp/claude-501/**)"
+      "Write(//tmp/claude-501/**)",
+      "Edit(/.claude/skills/test-loop/**)"
     ],
     "deny": [
       "Read(.env*)",
@@ -81,6 +82,16 @@
             "type": "command",
             "command": "bash scripts/hooks/block_generated_file_edit.sh",
             "statusMessage": "生成ファイルへの変更でないか確認中..."
+          },
+          {
+            "type": "command",
+            "command": "python3 scripts/hooks/check_spec_id_stability.py",
+            "statusMessage": "仕様IDの振り直しでないか確認中..."
+          },
+          {
+            "type": "command",
+            "command": "python3 scripts/hooks/record_test_scope.py",
+            "statusMessage": "依頼範囲内のテストか確認中..."
           }
         ]
       }

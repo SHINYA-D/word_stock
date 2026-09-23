@@ -31,6 +31,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -114,11 +115,33 @@ def test_file_rel(path: str) -> str:
     return p[i:] if i != -1 else p
 
 
+# 失敗の本文（`print` イベント側にある）から、実際の理由だけを取り出す。
+# `error` イベントは "Test failed. See exception logs above." しか返さないため、
+# それだけを保存していると「テストのバグ / コードのバグ」の判別材料が残らない。
+_DETAIL_RE = re.compile(
+    r"The following .*?:\s*\n(.*?)(?:\nWhen the exception was thrown|\n═|\Z)", re.S
+)
+_USELESS_MESSAGE = "See exception logs above"
+
+
+def _failure_detail(prints: list[str]) -> str:
+    """print イベント群から、失敗の原因を示す部分を抜き出す。"""
+    picked: list[str] = []
+    for p in prints:
+        m = _DETAIL_RE.search(p)
+        if m:
+            picked.append(m.group(1).strip())
+        elif "would not hit test" in p or p.lstrip().startswith("Warning:"):
+            picked.append(p.strip())
+    return "\n---\n".join(picked)[:1200]
+
+
 def parse_test_events(jsonl_path: str) -> dict:
     tests: dict[int, dict] = {}
     suites: dict[int, str] = {}  # suiteID → テストファイルパス（失敗の所在を示すため）
     if not os.path.exists(jsonl_path):
-        return {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "failures": []}
+        return {"total": 0, "passed": 0, "failed": 0, "skipped": 0,
+                "failures": [], "all": []}
 
     with open(jsonl_path, encoding="utf-8") as f:
         for line in f:
@@ -139,7 +162,7 @@ def parse_test_events(jsonl_path: str) -> dict:
                 if info.get("name", "").startswith("loading /"):
                     continue
                 tests[info["id"]] = {"name": info.get("name", "?"), "result": None,
-                                     "message": "",
+                                     "message": "", "prints": [],
                                      "file": suites.get(info.get("suiteID"), "")}
             elif t == "testDone":
                 tid = ev.get("testID")
@@ -154,25 +177,42 @@ def parse_test_events(jsonl_path: str) -> dict:
                 tid = ev.get("testID")
                 if tid in tests:
                     tests[tid]["message"] = (ev.get("error", "") or "")[:500]
+            elif t == "print":
+                tid = ev.get("testID")
+                if tid in tests:
+                    tests[tid]["prints"].append(ev.get("message", "") or "")
 
     passed = failed = skipped = 0
     failures = []
+    all_tests = []
     for info in tests.values():
         r = info["result"]
+        all_tests.append({"name": info["name"], "result": r,
+                          "file": test_file_rel(info["file"])})
         if r == "success":
             passed += 1
         elif r == "skipped":
             skipped += 1
         else:
             failed += 1
-            failures.append({"name": info["name"], "message": info["message"],
-                             "file": test_file_rel(info["file"])})
+            raw = info["message"]
+            detail = _failure_detail(info["prints"])
+            # 役に立たない error 本文より、print から取った実際の理由を優先する
+            message = detail if detail and _USELESS_MESSAGE in raw else (detail or raw)
+            failures.append({
+                "name": info["name"],
+                "message": (message or raw)[:1200],
+                "raw_message": raw,
+                "likely_cause": loop_state.classify_failure(message or raw),
+                "file": test_file_rel(info["file"]),
+            })
     return {
         "total": passed + failed + skipped,
         "passed": passed,
         "failed": failed,
         "skipped": skipped,
         "failures": failures,
+        "all": all_tests,
     }
 
 
@@ -296,18 +336,41 @@ def main() -> int:
         state = loop_state.record_run(loop_target)
     else:
         state = loop_state.load_state(create=False)
+
+    # ---- 仕様書 / 項目書との突き合わせ（verdict が読むので先に用意する） ----- #
+    # spec.drifted と doc_sync は verdict に効く（仕様漏れ・境界値は警告のみ）。
+    sc = loop_state.spec_coverage(loop_target) if loop_target else None
+    if loop_target:
+        report["spec"] = sc
+        report["doc_sync"] = loop_state.doc_test_sync(loop_target, tests)
+
     report["loop"] = loop_state.compute_verdict(
         report, loop_target, state,
         in_denominator=bool(loop_target) and loop_target in target_files,
     )
 
-    # ---- 仕様書との突き合わせ（警告のみ。合否・verdict には使わない） ------- #
     if loop_target:
-        sc = loop_state.spec_coverage(loop_target)
-        report["spec"] = sc
-        warning = loop_state.format_spec_warning(sc) if sc else None
-        if warning:
-            report["loop"]["warnings"].append(warning)
+        for warning in (
+            loop_state.format_spec_warning(sc) if sc else None,
+            loop_state.format_drift_warning(sc) if sc else None,
+            loop_state.format_doc_sync_warning(report.get("doc_sync")),
+        ):
+            if warning:
+                report["loop"]["warnings"].append(warning)
+        # 未承認の仕様書があると網羅判定そのものが無効になる（fail-open）
+        if sc is None:
+            un = loop_state.unapproved_spec_for(loop_target)
+            if un:
+                report["loop"]["warnings"].append(
+                    f"⚠ 仕様書 {un['path']} は status: {un['status']} のため、"
+                    "仕様 ID の網羅判定が無効です。承認してから回すか、ユーザーに確認してください"
+                )
+        oos = (state or {}).get("out_of_scope_writes") or []
+        if oos:
+            report["loop"]["warnings"].append(
+                f"依頼範囲の外のテスト関連ファイルを変更している {len(oos)} 件: "
+                + ", ".join(oos[:5])
+            )
 
     with open("coverage/harness_report.json", "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
