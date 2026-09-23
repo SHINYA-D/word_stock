@@ -50,7 +50,7 @@ class _SamplePageState extends ConsumerState<SamplePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('テスト'),
+        title: const Text('サンプル'),
       ),
       body: state.samples.when(
         loading: () => const Center(child: CircularProgressIndicator()),
