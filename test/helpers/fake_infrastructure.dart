@@ -121,6 +121,11 @@ class FakeSampleRepository implements SampleRepository {
   Completer<void>? updateGate;
   Completer<void>? deleteGate;
 
+  /// 呼び出し順ごとに個別のゲート・戻り値を割り当てたい場合に使うキュー
+  /// （FIFO。同じ getSamples でも呼び出しごとに違うタイミング・結果を
+  /// シミュレートしたい競合テスト用。空なら [getGate] / [samples] にフォールバックする）。
+  final List<({Completer<void>? gate, List<Sample>? returnValue})> getResponses = [];
+
   final List<({String userId})> getCalls = [];
   final List<({String userId, String name})> createCalls = [];
   final List<({String userId, String sampleId, String name})> updateCalls = [];
@@ -133,9 +138,13 @@ class FakeSampleRepository implements SampleRepository {
   @override
   Future<Either<Failure, List<Sample>>> getSamples({required String userId}) async {
     getCalls.add((userId: userId));
-    if (getGate != null) await getGate!.future;
+    final response = getResponses.isNotEmpty ? getResponses.removeAt(0) : null;
+    final gate = response?.gate ?? getGate;
+    if (gate != null) await gate.future;
     final f = _pop(getFailures);
     if (f != null) return Left(f);
+    final returnValue = response?.returnValue;
+    if (returnValue != null) return Right(List.of(returnValue));
     return Right(List.of(samples));
   }
 
