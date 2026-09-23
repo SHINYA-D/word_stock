@@ -9,6 +9,10 @@ part 'sample_view_model.g.dart';
 @riverpod
 class SampleViewModel extends _$SampleViewModel {
   late String _userId;
+
+  /// データを変える操作が完了するたびに進める。読み取りの結果が古いかどうかの判定に使う。
+  int _revision = 0;
+
   @override
   SampleState build() {
     Future.microtask(() => _initState());
@@ -21,18 +25,7 @@ class SampleViewModel extends _$SampleViewModel {
           userId: _userId,
         );
     result.fold(
-      (failure) {
-        state = switch (failure) {
-          // 通信・認証エラーは ErrorScreen ではなく NetworkErrorDialog で伝える
-          NetworkFailure() || AuthFailure() => state.copyWith(
-              samples: const AsyncValue.data([]),
-              operationFailure: failure,
-            ),
-          _ => state.copyWith(
-              samples: AsyncValue.error(failure, StackTrace.current),
-            ),
-        };
-      },
+      _applyLoadFailure,
       (samples) {
         state = state.copyWith(
           samples: AsyncValue.data(samples),
@@ -41,22 +34,42 @@ class SampleViewModel extends _$SampleViewModel {
     );
   }
 
+  /// 一覧を表示できていないとき（初期読み込み・`ErrorScreen` からの再試行）の失敗の扱い。
+  /// 通信・認証エラーは `ErrorScreen` ではなく `NetworkErrorDialog` で伝える（原則-11）。
+  /// 初期読み込みと再試行で扱いがずれないよう、両方からこれを呼ぶ。
+  void _applyLoadFailure(Failure failure) {
+    state = switch (failure) {
+      NetworkFailure() || AuthFailure() => state.copyWith(
+          samples: const AsyncValue.data([]),
+          operationFailure: failure,
+        ),
+      _ => state.copyWith(
+          samples: AsyncValue.error(failure, StackTrace.current),
+        ),
+    };
+  }
+
   Future<void> refresh() async {
     // 一覧を表示できているとき（プルして更新）は、失敗しても一覧を残す。
     // ErrorScreen からの再試行のときだけ、失敗を ErrorScreen で表示する。
     final hasList = state.samples.hasValue;
-    state = hasList
-        ? state.copyWith(operationFailure: null)
-        : state.copyWith(samples: const AsyncLoading());
+    state = hasList ? state.copyWith(operationFailure: null) : state.copyWith(samples: const AsyncLoading());
+    final startedAt = _revision;
     final result = await ref.read(getSamplesUseCaseProvider).call(
           userId: _userId,
         );
+    // 読み取り中にデータを変える操作が完了していたら、この結果はもう古い。
+    // 上書きすると削除したアイテムが一覧に戻ってしまうため捨てる。
+    if (_revision != startedAt) return;
     result.fold(
-      (failure) => state = hasList
-          ? state.copyWith(operationFailure: failure)
-          : state.copyWith(
-              samples: AsyncValue.error(failure, StackTrace.current),
-            ),
+      (failure) {
+        if (hasList) {
+          // プルして更新。失敗しても一覧はそのまま残し、スナックバーで伝える
+          state = state.copyWith(operationFailure: failure);
+          return;
+        }
+        _applyLoadFailure(failure);
+      },
       (samples) => state = state.copyWith(samples: AsyncValue.data(samples)),
     );
   }
@@ -74,6 +87,7 @@ class SampleViewModel extends _$SampleViewModel {
         return false;
       },
       (sample) {
+        _revision++;
         final current = state.samples.value ?? [];
         state = state.copyWith(
           samples: AsyncValue.data([...current, sample]),
@@ -100,6 +114,7 @@ class SampleViewModel extends _$SampleViewModel {
         return false;
       },
       (updated) {
+        _revision++;
         final current = state.samples.value ?? [];
         state = state.copyWith(
           samples: AsyncValue.data(
@@ -121,6 +136,7 @@ class SampleViewModel extends _$SampleViewModel {
     result.fold(
       (failure) => state = state.copyWith(operationFailure: failure),
       (_) {
+        _revision++;
         refresh();
       },
     );

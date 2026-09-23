@@ -8,12 +8,16 @@ class SampleListTile extends StatelessWidget {
     required this.onTap,
     required this.onEdit,
     required this.onDelete,
+    this.menuEnabled = true,
   });
 
   final Sample sample;
   final VoidCallback onTap;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+
+  /// 削除の処理中など、この行への操作を受け付けないときに false にする。
+  final bool menuEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -27,9 +31,9 @@ class SampleListTile extends StatelessWidget {
         ),
       ),
       child: ListTile(
-        onTap: onTap,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        // 削除の処理中はこの行への操作を受け付けない（タップが遷移に抜けないよう行ごと止める）
+        onTap: menuEnabled ? onTap : null,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         leading: Container(
           width: 40,
           height: 40,
@@ -50,6 +54,7 @@ class SampleListTile extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         trailing: PopupMenuButton<_Action>(
+          enabled: menuEnabled,
           icon: const Icon(Icons.more_vert),
           onSelected: (action) {
             if (action == _Action.edit) onEdit();

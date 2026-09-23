@@ -12,11 +12,27 @@ import 'package:word_stock/presentation/sample/sample_view_model.dart';
 import 'package:word_stock/presentation/sample/widgets/sample_list_tile.dart';
 
 /// テストパイプライン検証用の画面。HomePage（フォルダ一覧）と同じ構成。
-class SamplePage extends ConsumerWidget {
+class SamplePage extends ConsumerStatefulWidget {
   const SamplePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SamplePage> createState() => _SamplePageState();
+}
+
+class _SamplePageState extends ConsumerState<SamplePage> {
+  final _scrollController = ScrollController();
+
+  /// 削除の処理中のアイテム。完了するまでその行への操作を受け付けない（二重送信の防止）。
+  String? _deletingId;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(sampleViewModelProvider);
     final controller = ref.read(sampleViewModelProvider.notifier);
 
@@ -29,8 +45,7 @@ class SamplePage extends ConsumerWidget {
         _showNetworkErrorAndSignOut(context, ref);
         return;
       }
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('操作が失敗しました。')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('操作が失敗しました。')));
     });
 
     return Scaffold(
@@ -43,14 +58,21 @@ class SamplePage extends ConsumerWidget {
           message: 'サンプルの読み込みに失敗しました',
           onRetry: controller.refresh,
         ),
-        data: (samples) => samples.isEmpty
-            ? _EmptyView(onAdd: () => _showCreateDialog(context, controller))
-            : RefreshIndicator(
-                onRefresh: controller.refresh,
-                child: ListView.builder(
+        // 0件表示でもプルして更新できるようにする（別端末で作ったデータを取り込む手段が要るため）
+        data: (samples) => RefreshIndicator(
+          onRefresh: controller.refresh,
+          child: samples.isEmpty
+              ? _EmptyView(onAdd: () => _showCreateDialog(context, controller))
+              : ListView.builder(
+                  controller: _scrollController,
+                  // controller を渡すと primary が false になり、既定で付く
+                  // AlwaysScrollableScrollPhysics が外れる。件数が少なくても
+                  // プルして更新できるよう明示する
+                  physics: const AlwaysScrollableScrollPhysics(),
                   itemCount: samples.length,
                   itemBuilder: (context, i) => SampleListTile(
                     sample: samples[i],
+                    menuEnabled: _deletingId != samples[i].id,
                     onTap: () => FolderRoute(
                       folderId: samples[i].id,
                       $extra: samples[i].name,
@@ -59,13 +81,28 @@ class SamplePage extends ConsumerWidget {
                     onDelete: () => _showDeleteDialog(context, controller, samples[i]),
                   ),
                 ),
-              ),
+        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showCreateDialog(context, controller),
-        child: const Icon(Icons.add),
-      ),
+      // 一覧が決まっていない間（読み込み中・ErrorScreen 表示中）は作成させない
+      floatingActionButton: state.samples.hasValue
+          ? FloatingActionButton(
+              onPressed: () => _showCreateDialog(context, controller),
+              child: const Icon(Icons.add),
+            )
+          : null,
     );
+  }
+
+  /// 作成したアイテムは一覧の末尾に追加されるため、末尾まで送って画面内に見えるようにする。
+  /// ListView.builder は末尾を遅れて組み立てるので、伸びなくなるまで数フレーム追いかける。
+  void _scrollToNewest([int remaining = 3]) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final max = _scrollController.position.maxScrollExtent;
+      if (_scrollController.offset >= max) return;
+      _scrollController.jumpTo(max);
+      if (remaining > 0) _scrollToNewest(remaining - 1);
+    });
   }
 
   Future<void> _showNetworkErrorAndSignOut(
@@ -88,7 +125,9 @@ class SamplePage extends ConsumerWidget {
         onConfirm: (name) async {
           // 失敗したときはダイアログを閉じず、入力を残す
           final succeeded = await controller.createSample(name: name);
-          if (succeeded && ctx.mounted) Navigator.pop(ctx);
+          if (!succeeded) return;
+          if (ctx.mounted) Navigator.pop(ctx);
+          _scrollToNewest();
         },
       ),
     );
@@ -104,8 +143,7 @@ class SamplePage extends ConsumerWidget {
         confirmLabel: '保存',
         onConfirm: (name) async {
           // 失敗したときはダイアログを閉じず、入力を残す
-          final succeeded =
-              await controller.updateSample(sampleId: sample.id, name: name);
+          final succeeded = await controller.updateSample(sampleId: sample.id, name: name);
           if (succeeded && ctx.mounted) Navigator.pop(ctx);
         },
       ),
@@ -128,8 +166,13 @@ class SamplePage extends ConsumerWidget {
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
             onPressed: () {
-              controller.deleteSample(sampleId: sample.id);
+              // ダイアログを閉じてから削除する（概要 §削除ダイアログ）。
+              // ダイアログ内では二重送信を防げないため、完了までその行の操作を止める
               Navigator.pop(ctx);
+              setState(() => _deletingId = sample.id);
+              controller.deleteSample(sampleId: sample.id).whenComplete(() {
+                if (mounted) setState(() => _deletingId = null);
+              });
             },
             child: const Text('削除'),
           ),
@@ -145,20 +188,29 @@ class _EmptyView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.science_outlined, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text('サンプルがありません'),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add),
-            label: const Text('サンプルを作成'),
+    // 0件でもプルして更新できるよう、画面いっぱいの高さを持つスクロール可能なウィジェットにする
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.science_outlined, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text('サンプルがありません'),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: onAdd,
+                  icon: const Icon(Icons.add),
+                  label: const Text('サンプルを作成'),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -199,8 +251,7 @@ class _SampleNameDialogState extends State<_SampleNameDialog> {
   /// 確定の処理中は確定ボタンを無効にし、二重送信を防ぐ。
   bool _submitting = false;
 
-  bool get _canConfirm =>
-      !_submitting && widget.textController.text.trim().isNotEmpty;
+  bool get _canConfirm => !_submitting && widget.textController.text.trim().isNotEmpty;
 
   Future<void> _confirm() async {
     setState(() => _submitting = true);
@@ -213,28 +264,34 @@ class _SampleNameDialogState extends State<_SampleNameDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: TextField(
-        controller: widget.textController,
-        autofocus: true,
-        maxLines: 1,
-        inputFormatters: const [FolderNameLengthFormatter()],
-        decoration: const InputDecoration(
-          labelText: 'サンプル名',
-          helperText: '半角20文字（全角10文字）まで',
+    // 処理中は閉じられないようにする。閉じた後に成功すると一覧に反映され、
+    // 「キャンセルには副作用がない」（原則-7）と食い違うため。
+    // バリアのタップも Navigator.maybePop を通るので、PopScope で両方まとめて止まる
+    return PopScope(
+      canPop: !_submitting,
+      child: AlertDialog(
+        title: Text(widget.title),
+        content: TextField(
+          controller: widget.textController,
+          autofocus: true,
+          maxLines: 1,
+          inputFormatters: const [FolderNameLengthFormatter()],
+          decoration: const InputDecoration(
+            labelText: 'サンプル名',
+            helperText: '半角20文字（全角10文字）まで',
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: _submitting ? null : () => Navigator.pop(context),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: _canConfirm ? _confirm : null,
+            child: Text(widget.confirmLabel),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('キャンセル'),
-        ),
-        FilledButton(
-          onPressed: _canConfirm ? _confirm : null,
-          child: Text(widget.confirmLabel),
-        ),
-      ],
     );
   }
 }
