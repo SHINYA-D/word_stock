@@ -64,6 +64,10 @@ lib/firebase_options.dart
 
 # Test関連
 coverage/
+# test-loop のセッションステート（1依頼で使い捨て。end-session / TTL で破棄される）
+.test_loop/
 
 # FVM Version Cache
 .fvm/
+# Python venv for test tooling scripts
+scripts/.venv/

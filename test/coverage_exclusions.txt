@@ -1,0 +1,22 @@
+# 単体テスト対象外 登録簿
+#
+# scripts/harness_report.py の is_target() が「単体テスト対象」と判定するのに、
+# あえてテストを書かないと決めたファイルをここに登録する。
+#
+# 形式: 1 行 1 ファイル
+#   <lib/ からのパス> | <対象外にする理由>
+#
+# ・空行と # で始まる行は無視される
+# ・ここに無く、かつどのテストからも読み込まれないファイルがあると
+#   `bash scripts/test_harness.sh`（全体実行）がテスト漏れとして失敗する
+# ・テストを後から追加した / ファイルを消した場合はこの行も削除する
+#   （放置すると stale_exclusions として警告が出る。CI は落とさない）
+# ・ここに書いた内容は Excel 項目書の「対象外一覧」シートに集約される
+#
+# Widget テスト対象（lib/presentation/**/*_page.dart）はこのゲートの対象外。
+
+lib/domain/entities/app_user.dart | Freezed 宣言のみ。自作ロジック・不変条件なし
+lib/domain/entities/folder.dart | Freezed 宣言のみ。唯一の手書き行 L16 の fromJson は lib 内から未使用（生成コードへの委譲）。他テストから間接 import され lcov に 0% で現れるため stale 警告が出るが、専用テストは無く登録は有効
+lib/domain/entities/sample.dart | Freezed 宣言のみ。手書き行の fromJson は生成コードへの委譲で、仕様書 SMP に独自ロジックの項目なし。ViewModel・Repository のテストから間接 import され lcov に 0% で現れるため stale 警告が出るが、専用テストは無く登録は有効
+lib/domain/entities/user_settings.dart | Freezed 宣言のみ。デフォルト値だけでロジックなし
+lib/domain/entities/word.dart | Freezed 宣言のみ。自作ロジック・不変条件なし

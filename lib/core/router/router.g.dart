@@ -262,6 +262,10 @@ RouteBase get $appShellRoute => ShellRouteData.$route(
           factory: $ResultsRouteExtension._fromState,
         ),
         GoRouteData.$route(
+          path: '/sample',
+          factory: $SampleRouteExtension._fromState,
+        ),
+        GoRouteData.$route(
           path: '/settings',
           factory: $SettingsRouteExtension._fromState,
         ),
@@ -316,6 +320,23 @@ extension $ResultsRouteExtension on ResultsRoute {
 
   String get location => GoRouteData.$location(
         '/results',
+      );
+
+  void go(BuildContext context) => context.go(location);
+
+  Future<T?> push<T>(BuildContext context) => context.push<T>(location);
+
+  void pushReplacement(BuildContext context) =>
+      context.pushReplacement(location);
+
+  void replace(BuildContext context) => context.replace(location);
+}
+
+extension $SampleRouteExtension on SampleRoute {
+  static SampleRoute _fromState(GoRouterState state) => const SampleRoute();
+
+  String get location => GoRouteData.$location(
+        '/sample',
       );
 
   void go(BuildContext context) => context.go(location);

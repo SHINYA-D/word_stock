@@ -6,7 +6,7 @@ class ShellPage extends StatelessWidget {
 
   final Widget child;
 
-  static const _tabs = ['/home', '/results', '/settings'];
+  static const _tabs = ['/home', '/results', '/sample', '/settings'];
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +28,11 @@ class ShellPage extends StatelessWidget {
             icon: Icon(Icons.bar_chart_outlined),
             selectedIcon: Icon(Icons.bar_chart),
             label: '成績',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.science_outlined),
+            selectedIcon: Icon(Icons.science),
+            label: 'テスト',
           ),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),

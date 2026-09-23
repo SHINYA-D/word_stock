@@ -11,6 +11,7 @@ import 'package:word_stock/presentation/auth/sign_up/sign_up_page.dart';
 import 'package:word_stock/presentation/auth/splash/splash_page.dart';
 import 'package:word_stock/presentation/home/home_page.dart';
 import 'package:word_stock/presentation/result/result_page.dart';
+import 'package:word_stock/presentation/sample/sample_page.dart';
 import 'package:word_stock/presentation/settings/settings_page.dart';
 import 'package:word_stock/presentation/shell/shell_page.dart';
 import 'package:word_stock/presentation/flashcard_mode/flashcard_mode_page.dart';
@@ -190,6 +191,7 @@ class FlashcardModeResultRoute extends GoRouteData {
     TypedGoRoute<HomeRoute>(path: '/home'),
     TypedGoRoute<FolderRoute>(path: '/folder/:folderId'),
     TypedGoRoute<ResultsRoute>(path: '/results'),
+    TypedGoRoute<SampleRoute>(path: '/sample'),
     TypedGoRoute<SettingsRoute>(path: '/settings'),
   ],
 )
@@ -235,6 +237,14 @@ class ResultsRoute extends GoRouteData {
 
   @override
   Widget build(BuildContext context, GoRouterState state) => const ResultPage();
+}
+
+@immutable
+class SampleRoute extends GoRouteData {
+  const SampleRoute();
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) => const SamplePage();
 }
 
 @immutable

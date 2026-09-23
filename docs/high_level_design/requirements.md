@@ -226,7 +226,7 @@ lib/
             └── mock_flashcard_result_repository.dart
 ```
 
-> オフライン同期の詳細な設計（SQLiteテーブル定義・sync_queueによるキューイング・競合解決方式など）は `docs/online_offline.md` を参照。
+> オフライン同期の詳細な設計（SQLiteテーブル定義・sync_queueによるキューイング・競合解決方式など）は `docs/high_level_design/online_offline.md` を参照。
 
 ### 依存関係ルール
 
@@ -450,7 +450,7 @@ abstract class AuthState with _$AuthState {
 
 ### オフライン時の挙動
 
-> **注意:** 本セクションはオフライン同期対応（SQLite + `sync_queue`）への移行に伴い更新されている。旧バージョンでは「オンライン必須・ローカルキャッシュ不採用」としていたが、現在はログイン・新規登録・パスワード変更を除くコア機能（フォルダ・単語・成績・設定の作成/更新/削除、および閲覧）はオフラインでも継続利用できる。詳細な同期アーキテクチャ・フェーズ計画は `docs/online_offline.md` を参照。
+> **注意:** 本セクションはオフライン同期対応（SQLite + `sync_queue`）への移行に伴い更新されている。旧バージョンでは「オンライン必須・ローカルキャッシュ不採用」としていたが、現在はログイン・新規登録・パスワード変更を除くコア機能（フォルダ・単語・成績・設定の作成/更新/削除、および閲覧）はオフラインでも継続利用できる。詳細な同期アーキテクチャ・フェーズ計画は `docs/high_level_design/online_offline.md` を参照。
 
 - **認証系操作（ログイン・新規登録・パスワードリセット）は Firebase Auth 依存のためオフライン対応の対象外。** これらの操作時に通信不可を検知した場合 → `NetworkErrorDialog` を表示 → OK押下で `FirebaseAuth.signOut()` により強制ログアウト → `go_router` でログイン画面へリダイレクト
 - **ログイン後のデータ操作（フォルダ・単語・成績・設定）はオフラインでも継続利用可能。** 読み取りは常にSQLiteから行い、書き込みはオフライン時にSQLiteへ保存すると同時に `sync_queue` テーブルへ同一トランザクションで登録する
@@ -716,7 +716,7 @@ users/
 
 > **カスケード削除について:** Firestoreはカスケード削除を自動では行わない。フォルダ削除時はアプリ側（infrastructure層 `firestore_data_source.dart`）で配下の words / サブフォルダ / flashcardResults を再帰的に削除する処理を実装すること。
 
-> **ローカルDB（SQLite）とのミラーリングについて:** 本アプリはオフライン同期対応のため、上記Firestore構造とほぼ同一のスキーマを持つSQLiteテーブル（`folders` / `words` / `flashcard_results` / `settings`）をローカルに保持し、UI層は常にSQLiteを読み取り元とする。加えて未同期の変更操作を記録する `sync_queue` テーブル、最終同期時刻を記録する `sync_meta` テーブルを持つ。SQLite側のテーブル定義・カラム（`syncStatus` 等）の詳細は `docs/online_offline.md` を参照。
+> **ローカルDB（SQLite）とのミラーリングについて:** 本アプリはオフライン同期対応のため、上記Firestore構造とほぼ同一のスキーマを持つSQLiteテーブル（`folders` / `words` / `flashcard_results` / `settings`）をローカルに保持し、UI層は常にSQLiteを読み取り元とする。加えて未同期の変更操作を記録する `sync_queue` テーブル、最終同期時刻を記録する `sync_meta` テーブルを持つ。SQLite側のテーブル定義・カラム（`syncStatus` 等）の詳細は `docs/high_level_design/online_offline.md` を参照。
 
 ---
 
@@ -738,7 +738,7 @@ users/
 | 項目 | 内容 |
 |------|------|
 | 対応OS | iOS 15以上 / Android 10以上 |
-| オフライン対応 | **オフライン同期対応（移行済み）** — ログイン後のコア機能（フォルダ・単語・成績・設定）はSQLite + `sync_queue` によりオフラインでも継続利用可能。オンライン復帰時に自動同期。ログイン・新規登録・パスワード変更はFirebase Auth依存のためオフライン対応対象外（通信不可検知時は通信エラーダイアログを表示し強制ログアウト → ログイン画面へリダイレクト）。詳細は `docs/online_offline.md` を参照 |
+| オフライン対応 | **オフライン同期対応（移行済み）** — ログイン後のコア機能（フォルダ・単語・成績・設定）はSQLite + `sync_queue` によりオフラインでも継続利用可能。オンライン復帰時に自動同期。ログイン・新規登録・パスワード変更はFirebase Auth依存のためオフライン対応対象外（通信不可検知時は通信エラーダイアログを表示し強制ログアウト → ログイン画面へリダイレクト）。詳細は `docs/high_level_design/online_offline.md` を参照 |
 | セキュリティ | Firebase Security Rules でユーザーデータを保護（自分のデータのみ読み書き可） |
 | 多言語 | 単語の入力言語は制限なし（UI言語は日本語を基本とする） |
 | 開発補助 | `kUseMocks = false` フラグで Firebase 不要のモック実装に切り替え可能 |
