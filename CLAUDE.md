@@ -16,8 +16,8 @@ fvm dart run build_runner build --delete-conflicting-outputs
 # コード生成を監視し続ける
 fvm dart run build_runner watch --delete-conflicting-outputs
 
-# テスト実行
-fvm flutter test
+# テスト実行・カバレッジ計測（fvm flutter test の直叩きはフックが拒否する）
+bash scripts/test_harness.sh [<テストファイルのパス>]
 
 # Firebase不要のモックモードで起動
 fvm flutter run --dart-define=USE_MOCKS=true
@@ -48,7 +48,12 @@ fvm flutter run --dart-define=USE_MOCKS=true
 ## テスト方針
 
 単体テスト・Widgetテスト工程の自動生成パイプライン（`.claude/agents/test-*`, `.claude/skills/*-test-authoring`,
-`.claude/skills/test-loop`, `scripts/test_harness.sh`）で運用する。
+`.claude/skills/test-loop`, `scripts/test_harness.sh`, `scripts/hooks/`）で運用する。
+手順の正は `.claude/skills/test-loop/SKILL.md`（全体図は `docs/images/test_pipeline_overview.svg`）。
+
+**承認済みの詳細設計書（仕様書）がある対象は、仕様書を期待値の正とする。** コードを読んで期待値を作らない
+（バグがそのまま正解になるため）。仕様書どおりの期待値でテストが落ちたらプロダクションコードのバグとして
+`python3 scripts/loop_state.py bug` で記録し、期待値をコードに合わせない。
 
 ### テスト種別の使い分け
 
@@ -128,6 +133,11 @@ fvm flutter run --dart-define=USE_MOCKS=true
   `end-session` も同じ条件を要求する（緊急脱出は `end-session --force`）
 - 項目書の `## 対象外` は `- L142-145：理由` のように**行番号を付ける**。ハーネスが lcov の
   未カバー行と照合して「理由あり」を判定するため
+- 仕様書がある対象は、網羅性レビュー（test-loop 手順10）で **`test-fidelity-reviewer` を別エージェントとして
+  必ず起動する**。「そのテストは本当にその仕様 ID を確かめているか」を見る独立レビューで、テストを書いた本人には
+  見抜けない取り違え（テスト名は「B の行」なのにコードは A の行を操作していて、緑のまま通る等）を探す
+- 仕様書の ID を振り直す編集（既存 ID の内容が別の ID に移る）は `scripts/hooks/check_spec_id_stability.py` が拒否する。
+  項目追加は種別ごとの末尾の連番で行う（`.claude/skills/spec-authoring/SKILL.md`）
 - 項目書 Excel は `.claude/agents/test-doc-excel-generator` が `scripts/gen_test_excel.py` 経由で
   `~/Desktop/WordStock_テスト項目書_YYYYMMDD.xlsx` に生成する
 
@@ -184,3 +194,6 @@ sealed class Failure with _$Failure {
 | `docs/high_level_design/online_offline.md` | オフライン同期機能の実装指示書（フェーズ別タスク） |
 | `docs/detailed_design/**/*.md` | 機能ごとの振る舞い仕様書（詳細設計）。画面が主体なら `lib/presentation/` と同じ階層に Page と同じファイル名（`sample_page.md`）、画面が主体でなければ `docs/detailed_design/<機能名>/<機能名>.md` に置く。テストの期待値の根拠。書き方は `.claude/skills/spec-authoring/SKILL.md` |
 | `docs/development/common_principles.md` | 全画面共通の振る舞い原則。各仕様書から `原則-<番号>` で引用される |
+| `docs/development/test_loop_pipeline.md` | テスト自動生成パイプライン（test-loop）の解説。定義の正は `.claude/skills/test-loop/SKILL.md` |
+| `docs/development/hooks.md` | `.claude/settings.json` に登録したフックの解説 |
+| `docs/images/test_pipeline_overview.svg` | テスト自動生成の全体図。`python3 scripts/gen_pipeline_svg.py` で生成する（SVG を直接編集しない。手順やフックを変えたらスクリプトを直して再生成） |

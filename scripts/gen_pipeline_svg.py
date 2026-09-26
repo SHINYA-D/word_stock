@@ -169,7 +169,9 @@ def main() -> int:
              "宣言しないと Stop フックが全対象（is_target 全件）の消化を要求する",
              "全体依頼なら不要。途中からは loop_state.py scope <パス...>"])
     fh = box(LEFT_X, sy, LEFT_W, "file", "生成", [".test_loop/state.json",
-                                                  "  scope / done / inner / outer"],
+                                                  "  scope / done / inner / outer",
+                                                  "  production_bugs /",
+                                                  "  out_of_scope_writes"],
              mono_lines=True)
     connect(LEFT_X + LEFT_W, sy + fh / 2, MAIN_X, sy + 25)
     arrow(cx, y + h, y + h + 56); y += h + 56
@@ -183,7 +185,10 @@ def main() -> int:
              "承認済み仕様書（status: approved・targets に対象）を探し、",
              "章ごとの振り分けで担当する仕様 ID を決める（3章→Widget / 4章→ViewModel …）",
              "既存テストがあれば先にハーネスを回し、loop_state.py can-skip で判定する",
-             "　→「飛ばしてよい」なら手順3〜6を飛ばして手順7へ（2回目の実行で成果物を変えないため）"])
+             "　→「飛ばしてよい」なら手順3〜6を飛ばして手順7へ",
+             "　　（2回目の実行で成果物を変えないため）",
+             "仕様書が draft なら can-skip は必ず「生成が必要」→ ループを進めず",
+             "　ユーザーに承認するかを確認する（draft だと仕様 ID の網羅が判定されない）"])
     fh = box(LEFT_X, y + 52, LEFT_W, "file", "読み込み（あれば）",
              ["docs/detailed_design/**/*.md", "  （approved の仕様書のみ）"],
              mono_lines=True)
@@ -198,8 +203,10 @@ def main() -> int:
             ["直前に loop_state.py begin-attempt <lib パス>（外部ループ +1 / 内部 0）",
              "Tier1〜3 → test-unit-test-generator / Tier4 → test-widget-test-generator",
              "プロンプトには対象ファイルパスを 1 つだけ渡す",
-             "仕様書があれば、仕様書のパスと担当する仕様 ID も渡す",
-             "「期待値は仕様書から作る。コードは呼び出し方を知るためだけに読む」"])
+             "仕様書があれば、仕様書のパス・担当する仕様 ID・各 ID の指紋も渡す",
+             "「期待値は仕様書から作る。コードは呼び出し方を知るためだけに読む」",
+             "仕様のずれの差し戻し: 移動 → タグの貼り替えだけ（テストコードは触らない）",
+             "　　　　　　　　　　　 内容変更 → その ID のテストだけ作り直す"])
     box(RIGHT_X, hy, RIGHT_W, "hook", '🪝 PreToolUse  matcher="Agent|Task"',
         ["scripts/hooks/require_test_loop_skill.sh",
          "transcript の JSONL を grep → test-loop 読込済か判定",
@@ -214,17 +221,23 @@ def main() -> int:
             ["test-unit-test-generator / test-widget-test-generator",
              "参照 Skill: 📘 unit-test-authoring / 📘 widget-test-authoring",
              "　　　　　  📘 excel-testdoc-authoring（項目書 MD のフォーマット規約）",
-             "テストコードと項目書 MD を必ずペアで生成する",
-             "項目書の「仕様ID」列に、各テストケースが引用する仕様 ID を書く"])
-    rh = box(RIGHT_X, hy, RIGHT_W, "hook", '🪝 PreToolUse  matcher="Edit|Write"',
-             ["scripts/hooks/block_generated_file_edit.sh",
-              "*.freezed.dart / *.g.dart / router.g.dart への書込を deny",
-              "★ .test_loop/ 配下への書込も deny（ステート捏造の封鎖）"])
+             "テストコードと項目書 MD を必ずペアで生成する（行とケースは 1 対 1）",
+             "項目書の「仕様ID」列に、引用する仕様 ID と指紋を書く（SMP-D12 #a3f1c2）"])
+    rh = box(RIGHT_X, hy, RIGHT_W, "hook", '🪝 PreToolUse  matcher="Edit|Write"（3本）',
+             ["① scripts/hooks/block_generated_file_edit.sh",
+              "　*.freezed.dart / *.g.dart / router.g.dart への書込を deny",
+              "　★ .test_loop/ 配下への書込も deny（ステート捏造の封鎖）",
+              "② scripts/hooks/check_spec_id_stability.py",
+              "　仕様書の ID の振り直し（既存 ID の内容が別 ID に移る編集）を deny",
+              "③ scripts/hooks/record_test_scope.py",
+              "　scope の外のテスト関連ファイルへの書込を記録（拒否はしない）",
+              "　→ state.json の out_of_scope_writes → Excel の要確認一覧へ"])
     fh = box(LEFT_X, hy, LEFT_W, "file", "生成物",
              ["test/**/*_test.dart", "test/test_cases/**/*_test_cases.md"],
              mono_lines=True)
     connect(MAIN_X + MAIN_W, hy + 25, RIGHT_X, hy + 25, "#dc2626")
     connect(LEFT_X + LEFT_W, hy + fh / 2, MAIN_X, hy + 25)
+    h = max(h, rh)          # 右のフック注釈が次の段に重ならないように
     arrow(cx, y + h, y + h + 30); y += h + 30
 
     hy = y
@@ -245,7 +258,10 @@ def main() -> int:
              "限定分母でフィルタ / テスト漏れ（untested_files）検出 / JSON レポート出力",
              "harness_report.py が loop_state.compute_verdict() を呼び判定を書き込む",
              "仕様書がある対象は、項目書の仕様ID列を仕様書と突き合わせる",
-             "（テストの無い ID・境界値の不足 → 「仕様漏れ」の警告。判定には影響しない）"])
+             "　spec.drifted（指紋の食い違い＝仕様のずれ）→ continue",
+             "　spec.missing / boundary_short（仕様漏れ）→ 警告のみ",
+             "doc_sync: 今回の実行の全テスト名と項目書を照合（不一致 → continue）",
+             "失敗は tests.failures[].likely_cause に自動分類（test / production / unknown）"])
     fh = box(LEFT_X, hy, LEFT_W, "file", "出力",
              ["coverage/lcov.info", "coverage/lcov.filtered.info",
               "coverage/harness_report.json", "coverage/test_machine.jsonl"],
@@ -260,6 +276,7 @@ def main() -> int:
             ["stop  → 手順7 へ（カバレッジ達成 / 未カバー行に理由あり /",
              "　　　　 失敗が記録済みのバグだけ / 上限到達）",
              "continue → 差し戻して手順3〜5 を反復",
+             "失敗の分類より先に 仕様のずれ → 項目書との不一致 → 仕様漏れ を解消させる",
              "上限は内部3回・外部3回。まず目標に達したかを判定し、continue の",
              "ときだけ上限を当てはめて stop に変える（目標達成の stop は上書きしない）",
              "※ ループの継続/終了は LLM が判断しない。回数も数えない"],
@@ -271,7 +288,10 @@ def main() -> int:
               "（症状の先頭に仕様 ID を書く）",
               "→ 再実行すると、その ID の失敗は",
               "　 判定から除外されて stop",
-              "→ skipped にして次の対象へ"])
+              "→ skipped にして次の対象へ",
+              "※ likely_cause が test の失敗は",
+              "　 登録しても除外されない（誤登録で",
+              "　 ループを抜けられない）"])
     connect(LEFT_X + LEFT_W, dy + bh / 2, MAIN_X, dy + 25)
     # continue の差し戻し（手順3 のエージェント起動へ戻る）
     out.append(f'<polyline points="{MAIN_X},{dy + 25} {MAIN_X - 20},{dy + 25} '
@@ -282,6 +302,7 @@ def main() -> int:
          11, "#b91c1c", bold=True, anchor="end")
     text(MAIN_X - 26, (dy + step2_y) / 2 + 8, "手順3〜5 を反復",
          11, "#b91c1c", bold=True, anchor="end")
+    h = max(h, bh)          # 左のバグ注釈が手順7 に重ならないように
     arrow(cx, y + h, y + h + 34, "#047857", "stop", "#047857"); y += h + 34
 
     # ── 手順7: 記録 ──
@@ -336,12 +357,23 @@ def main() -> int:
     h = box(MAIN_X, y, MAIN_W, "agent", "手順9: 🟩 SUBAGENT: architecture-guard",
             ["生成したテストコードの CLAUDE.md 規約違反をレビュー（読み取り専用）"])
     box(RIGHT_X, hy, RIGHT_W, "hook", '🪝 PreToolUse  matcher="Agent|Task"',
-        ["require_test_loop_skill.sh は発火するが subagent_type が",
-         "test-* 3兄弟でないため 2段目のふるいで即 exit 0（素通り）"])
+        ["require_test_loop_skill.sh は発火するが subagent_type が生成系 3 エージェント",
+         "（unit / widget / excel）でないため 2段目のふるいで即 exit 0（素通り）"])
     connect(MAIN_X + MAIN_W, hy + 25, RIGHT_X, hy + 25, "#dc2626")
     arrow(cx, y + h, y + h + 30); y += h + 30
 
-    h = box(MAIN_X, y, MAIN_W, "main", "手順10: 網羅性・必要性の自己監査（メインが実施）",
+    hy = y
+    h = box(MAIN_X, y, MAIN_W, "agent", "手順10-1: 🟩 SUBAGENT: test-fidelity-reviewer",
+            ["仕様書がある対象だけ。テストを書いたエージェントとは別に起動する独立レビュー",
+             "「そのテストは本当にその仕様 ID を確かめているか」だけを見る（読み取り専用）",
+             "例: テスト名は「B の行」なのにコードは .at(0)（A の行）を操作していた",
+             "重大度 High（別の対象を検証 / 仕様と逆の期待値）は必ず差し戻す"])
+    box(RIGHT_X, hy, RIGHT_W, "hook", '🪝 PreToolUse  matcher="Agent|Task"',
+        ["require_test_loop_skill.sh は発火するが生成系 3 エージェントでないため素通り"])
+    connect(MAIN_X + MAIN_W, hy + 25, RIGHT_X, hy + 25, "#dc2626")
+    arrow(cx, y + h, y + h + 30); y += h + 30
+
+    h = box(MAIN_X, y, MAIN_W, "main", "手順10-2: 網羅性・必要性の自己監査（メインが実施）",
             ["正常系/異常系/境界値の欠落・重複・無価値テスト・対象外理由の妥当性を点検",
              "仕様書がある対象: 引用した ID の条件と期待される動作をすべて確かめているか、",
              "期待値をコードの動作に寄せていないか、仕様書にない操作手段を使っていないか",
@@ -354,7 +386,7 @@ def main() -> int:
              "入力: test/test_cases/**/*.md + harness_report.json + .test_loop/state.json",
              "手順8〜10で問題が残っていても必ず実行する"])
     box(RIGHT_X, hy, RIGHT_W, "hook", '🪝 PreToolUse  matcher="Agent|Task"',
-        ["require_test_loop_skill.sh → test-* 3兄弟に該当",
+        ["require_test_loop_skill.sh → 生成系 3 エージェントに該当",
          "→ transcript 判定 → ✅通過"])
     connect(MAIN_X + MAIN_W, hy + 25, RIGHT_X, hy + 25, "#dc2626")
     arrow(cx, y + h, y + h + 30); y += h + 30
@@ -368,7 +400,9 @@ def main() -> int:
              ["~/Desktop/",
               "WordStock_テスト項目書_YYYYMMDD.xlsx",
               "（要確認一覧: 理由なし未達 / バグ /",
-              " テスト失敗 / テスト漏れ は赤字）",
+              " テスト失敗 / テスト漏れ /",
+              " 項目書との不一致 / 仕様のずれ",
+              " は赤字）",
               "（仕様との対応: 仕様 ID ごとの",
               " テスト件数と OK / NG）"], mono_lines=True)
     connect(LEFT_X + LEFT_W, ey + fh / 2, MAIN_X, ey + 25)
@@ -399,8 +433,10 @@ def main() -> int:
                  f'全対象の消化後に1回だけ</text>')
 
     h = box(MAIN_X, y, MAIN_W, "user", "👤 最終報告",
-            ["生成ファイル数 / 要確認（区分別の件数と対象）/ 対象外にしたファイル・行 /",
-             "レビュー指摘と対応 / Excel パス / 全体カバレッジ（参考値）"])
+            ["生成ファイル数 / 要確認（区分別の件数と対象）/ 仕様書との対応 /",
+             "項目書とテストコードの一致 / 依頼範囲の外を触ったファイル / 仕様書の不備 /",
+             "対象外にしたファイル・行 / レビュー指摘と対応 / Excel パス /",
+             "全体カバレッジ（参考値）"])
     y += h + 40
 
     # ══ Stop フックの説明（全ターン共通なので独立したバンドで説明）══
@@ -415,7 +451,7 @@ def main() -> int:
               "　　　　　　　  ・verdict が stop なのに finish 未実行 → 手順7 を促す",
               "　　　　　　　  ・scope（未設定なら全対象）に未消化が残っている → 手順2 へ戻す",
               "　　　　　　　  ・全対象 done だが completed_at 無し → 手順8〜12 を促す",
-              "無限ループ対策 … 進捗指紋（inner/outer・done 件数・harness_report.json の mtime）が"
+              "無限ループ対策 … 進捗指紋（current・inner/outer・done/skipped 件数・harness_report.json の mtime）が"
               "3 回連続で変化しなければ解除して制御を返す",
               "　　　　　　　　 セッション通算 60 回でも解除。例外・ステート破損はすべてフェイルオープン（通す）",
               "狙い …… SKILL.md「大原則: テスト工程は必ず最後（Excel 生成）までやり切る」を"

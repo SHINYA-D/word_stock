@@ -4,7 +4,7 @@
 
 `.claude/settings.json` の `hooks` は JSON のためコメントを書けない。
 そのため、各フックが「何を」「なぜ」ブロックしているのかを本ドキュメントに解説として残す。
-仕様そのものの正は `.claude/settings.json` と `scripts/hooks/*.sh`（コメント付き）にあり、
+仕様そのものの正は `.claude/settings.json` と `scripts/hooks/*.sh` / `scripts/hooks/*.py`（コメント付き）にあり、
 本ドキュメントはその補助資料。フック追加・変更時は本ドキュメントも追従させること。
 
 ## 全体像
@@ -18,9 +18,9 @@
 |---------|-----------|---------------------|
 | `Bash` | Bashコマンド実行 | `block_direct_flutter_test.sh` |
 | `Agent\|Task` | サブエージェント起動 | `require_test_loop_skill.sh` |
-| `Edit\|Write` | ファイル編集・新規作成 | `block_generated_file_edit.sh`（生成ファイル + `.test_loop/`） |
+| `Edit\|Write` | ファイル編集・新規作成 | `block_generated_file_edit.sh`（生成ファイル + `.test_loop/`）→ `check_spec_id_stability.py`（仕様 ID の振り直し）→ `record_test_scope.py`（依頼範囲外への書き込みの記録） |
 
-同一matcherに複数フックを登録した場合は配列の順番通りに実行される（現状は各matcher 1本ずつ）。
+同一matcherに複数フックを登録した場合は配列の順番通りに実行される（`Edit|Write` は3本、それ以外は1本ずつ）。
 
 `Stop` フックは PreToolUse とは別のタイミング――**メインエージェントがターンを終えて
 ユーザーに制御を返そうとする瞬間**に発火し、`decision: "block"` を返すとターンが終わらず
@@ -30,8 +30,8 @@
 |---------|---------------------|------|
 | `Stop` | `require_test_loop_completion.py` | テスト工程を Excel 生成まで終わらせるまでターンを終了させない |
 
-図解: [images/hooks_overview.svg](../images/hooks_overview.svg)（フック単体）/
-[images/test_pipeline_overview.svg](../images/test_pipeline_overview.svg)（テスト工程のどこで発火するか）
+図解: [images/test_pipeline_overview.svg](../images/test_pipeline_overview.svg)（テスト工程のどこで発火するか。
+`python3 scripts/gen_pipeline_svg.py` で生成。フックを追加・変更したらスクリプトも直して再生成する）
 
 ---
 
@@ -70,7 +70,9 @@ test-loop（[test_loop_pipeline.md](test_loop_pipeline.md)）やExcel生成エ�
 
 **やっていること**:
 `tool_input.subagent_type` が `test-unit-test-generator` / `test-widget-test-generator` /
-`test-doc-excel-generator` のいずれかの場合のみ判定する（それ以外のエージェントは即通過）。
+`test-doc-excel-generator` のいずれか（生成系 3 エージェント）の場合のみ判定する（それ以外のエージェントは即通過）。
+レビュー用の `architecture-guard` と `test-fidelity-reviewer` は読み取り専用で、単独で起動しても工程を
+壊さないため対象外（`test-fidelity-reviewer` は名前が `test-` で始まるが、この一覧には入っていない）。
 `transcript_path`（このセッションのJSONL）に test-loop スキルの読み込み痕跡
 （Skill呼び出し `"skill":"test-loop"` / `/test-loop` のスラッシュ起動 / `SKILL.md` の直接読み込み）が
 無ければ `decision: "block"` を返し、先に test-loop を読み込むよう促す。
@@ -96,10 +98,56 @@ Edit/Writeで指定されたファイルパスの拡張子・ファイル名が 
 のいずれかに該当すれば、`decision: "block"` を返して編集・作成そのものを拒否する。拒否理由には
 `fvm dart run build_runner build --delete-conflicting-outputs` で更新するよう促すメッセージが含まれる。
 
+あわせて、test-loop のステート（`.test_loop/` 配下）への Edit/Write も拒否する。
+
 **なぜ必要か**:
 生成ファイルを手で編集しても、次に `build_runner` を実行した瞬間に上書きされて変更が消える。
 気づかないまま作業を進めると、実装したはずの変更が消失する事故につながるため、編集を試みた
 その場でブロックする。
+
+`.test_loop/state.json` はスクリプト（`loop_state.py` / `harness_report.py` / `gen_test_excel.py`）だけが
+書き込むべきファイル。`completed_at` や `inner` / `outer` を手で書き換えられると、Stop フック
+（`require_test_loop_completion.py`）の解除条件とループ上限が両方とも無効化されるため、捏造できないようにする。
+
+---
+
+## `scripts/hooks/check_spec_id_stability.py`（Edit/Write用）
+
+**発火条件**: Edit または Write ツール呼び出し前（毎回）。`docs/detailed_design/` 配下の仕様書だけを検査する
+
+**根拠**: `.claude/skills/spec-authoring/SKILL.md`「ID と『条件・期待される動作』の対応を変えない。
+行の並べ替え・章の再編は自由。追加は種別ごとの末尾の連番で行う」
+
+**やっていること**:
+編集後の仕様書を組み立て、**既存 ID の内容が、別の ID の内容として現れている**（＝ ID の振り直し）場合だけ
+`decision: "block"` を返して拒否する。既存 ID の中身を更新するだけの編集（例: 半角20文字 → 30文字）は通す。
+そちらは test-loop 側の内容照合（`harness_report.json` の `spec.drifted`、`内容変更`）が拾う。
+
+**なぜ必要か**:
+この規約は SKILL.md に書かれていたが、書かれた次のコミットで破られた（103 項目 → 170 項目の改訂で ID が
+振り直され、旧 `SMP-D04`「読み込み中の表示」が新 `SMP-D11` に移り、新 `SMP-D04` は別の項目になった）。
+項目書とテストコードは ID を文字列で引用しているだけなので、つなぎ替わったことに誰も気づけない。
+そこで、振り直しそのものを編集の時点で止める。
+
+---
+
+## `scripts/hooks/record_test_scope.py`（Edit/Write用）
+
+**発火条件**: Edit または Write ツール呼び出し前（毎回）
+
+**根拠**: CLAUDE.md「依頼範囲（`start-session --scope`）の外のテスト関連ファイルを変更すると記録される」
+
+**やっていること**:
+test-loop のセッション中で、`start-session --scope` で範囲が宣言されているとき、`test/`（`integration_test/`）配下の
+書き込み先が「範囲内の対象ファイルに対応するテスト・項目書」でなければ、`.test_loop/state.json` の
+`out_of_scope_writes` に記録する。**拒否はしない**。記録はハーネスの警告・最終報告・Excel の「要確認一覧」
+（区分「依頼範囲外の変更」）に載る。
+セッションが無い・scope が未設定（全対象の依頼）・書き込み先が `test/` 配下でない場合は何もしない。
+
+**なぜ必要か**:
+「サンプル画面だけ」の依頼でも、サブエージェントの Edit/Write にはパスの制限が無いので、他の画面のテストや
+共有ヘルパー（`test/helpers/**`）を書き換えられる。`--scope` の宣言は、そのままでは何も守っていない。
+共有ヘルパーへの追加は実際に必要になることがあるので拒否はせず、「範囲の外を触った」ことを見えるようにする。
 
 ---
 
@@ -136,7 +184,7 @@ Edit/Writeで指定されたファイルパスの拡張子・ファイル名が 
 
 **無限ループ対策**:
 「押し戻したのに LLM がハーネスを回さない」場合、`verdict` は古いまま `continue` でカウンタも増えず、
-永久に押し戻され続ける。そこで進捗フィンガープリント（`inner`/`outer`・`done` 件数・
+永久に押し戻され続ける。そこで進捗フィンガープリント（`current`・`inner`/`outer`・`done`/`skipped` 件数・
 `harness_report.json` の mtime）を `.test_loop/stop_gate.json` に記録し、変化が無い押し戻しが
 3 回続いたら関所を解除して制御を返す（`TEST_LOOP_NO_PROGRESS_MAX`）。セッション通算 60 回でも解除
 （`TEST_LOOP_TOTAL_MAX`）。一時的に無効化するなら `TEST_LOOP_STOP_GATE=0`。
@@ -164,6 +212,8 @@ Edit/Writeで指定されたファイルパスの拡張子・ファイル名が 
 | `scripts/hooks/block_direct_flutter_test.sh` | Bash用フック（`fvm flutter test` / `flutter test` 直叩き禁止） |
 | `scripts/hooks/require_test_loop_skill.sh` | Agent/Task用フック（test-loop 未読込でのテストエージェント起動禁止） |
 | `scripts/hooks/block_generated_file_edit.sh` | Edit/Write用フック（生成ファイル + `.test_loop/` の編集禁止） |
+| `scripts/hooks/check_spec_id_stability.py` | Edit/Write用フック（仕様書の ID の振り直し禁止） |
+| `scripts/hooks/record_test_scope.py` | Edit/Write用フック（依頼範囲外のテスト関連ファイルへの書き込みを記録。拒否はしない） |
 | `scripts/hooks/require_test_loop_completion.py` | Stop用フック（Excel 生成まで終わらせるまでターン終了を拒否） |
 | `scripts/loop_state.py` | ループ回数・進捗・`completed_at` の管理と `compute_verdict()` |
 | `scripts/test_harness.sh` | テスト実行・カバレッジ計測ハーネス（直叩き禁止の代替手段） |
