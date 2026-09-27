@@ -4,13 +4,13 @@ import 'package:fpdart/fpdart.dart';
 import 'package:word_stock/core/error/failure.dart';
 import 'package:word_stock/domain/entities/app_user.dart';
 import 'package:word_stock/domain/repositories/auth_repository.dart';
-import 'package:word_stock/infrastructure/sync/sync_service.dart';
+import 'package:word_stock/domain/repositories/sync_repository.dart';
 
 class SignInWithEmailUseCase {
   const SignInWithEmailUseCase(this._repository, this._syncService);
 
   final AuthRepository _repository;
-  final SyncService _syncService;
+  final SyncRepository _syncService;
 
   Future<Either<Failure, AppUser>> call({
     required String email,

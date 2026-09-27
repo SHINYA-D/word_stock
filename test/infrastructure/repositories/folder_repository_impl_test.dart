@@ -1,36 +1,91 @@
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:word_stock/core/error/failure.dart';
-import 'package:word_stock/domain/entities/folder.dart';
 import 'package:word_stock/domain/entities/flashcard_result.dart';
+import 'package:word_stock/domain/entities/folder.dart';
 import 'package:word_stock/domain/entities/word.dart';
 import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
+import 'package:word_stock/infrastructure/data_sources/local/flashcard_result_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/folder_local_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/local_date.dart';
 import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/flashcard_result_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/folder_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/sync_queue_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/flashcard_result_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/word_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/flashcard_result_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/word_local_data_source.dart';
 import 'package:word_stock/infrastructure/repositories/folder_repository_impl.dart';
 
 import '../../helpers/fake_infrastructure.dart';
 
+/// ローカルへの保存で例外を投げる（FLD-C03, FLD-U05）。
+class ThrowingSaveFolderLocalDataSource extends FolderLocalDataSource {
+  ThrowingSaveFolderLocalDataSource(DatabaseHelper dbHelper) : super(dbHelper);
+
+  @override
+  Future<void> save(
+    DatabaseExecutor db,
+    Folder folder, {
+    required String userId,
+    String syncStatus = 'synced',
+  }) {
+    throw Exception('save failed');
+  }
+}
+
+/// ローカルの読み取りで例外を投げる（FLD-R04）。
+class ThrowingFindByUserIdFolderLocalDataSource extends FolderLocalDataSource {
+  ThrowingFindByUserIdFolderLocalDataSource(DatabaseHelper dbHelper)
+      : super(dbHelper);
+
+  @override
+  Future<List<Folder>> findByUserId(String userId,
+      {String? parentFolderId}) {
+    throw Exception('read failed');
+  }
+}
+
+/// 配下の単語の論理削除（保存）で例外を投げる（FLD-X07）。
+class ThrowingMarkDeletedWordLocalDataSource extends WordLocalDataSource {
+  ThrowingMarkDeletedWordLocalDataSource(DatabaseHelper dbHelper)
+      : super(dbHelper);
+
+  @override
+  Future<void> markDeleted(DatabaseExecutor db, String wordId, DateTime at) {
+    throw Exception('markDeleted failed');
+  }
+}
+
+/// キューへの登録で例外を投げる（FLD-C04, FLD-U08）。
+class ThrowingEnqueueSyncQueueDataSource extends SyncQueueDataSource {
+  ThrowingEnqueueSyncQueueDataSource(DatabaseHelper dbHelper) : super(dbHelper);
+
+  @override
+  Future<void> enqueueInTransaction(
+    DatabaseExecutor txn, {
+    required String operation,
+    required String tableName,
+    required String recordId,
+    required String userId,
+    String? parentId,
+  }) {
+    throw Exception('enqueue failed');
+  }
+}
+
 void main() {
   const userId = 'user-1';
+  const otherUserId = 'user-2';
 
   late DatabaseHelper dbHelper;
   late FolderLocalDataSource folderLocal;
   late WordLocalDataSource wordLocal;
   late FlashcardResultLocalDataSource flashcardResultLocal;
   late SyncQueueDataSource syncQueue;
-  late FakeFirestoreDataSource fakeRemote;
-  late FakeConnectivityMonitor fakeConnectivity;
-  late FolderRepositoryImpl repository;
+  late int onLocalChangedCallCount;
 
   setUpAll(() async {
     sqfliteFfiInit();
@@ -57,19 +112,25 @@ void main() {
     wordLocal = WordLocalDataSource(dbHelper);
     flashcardResultLocal = FlashcardResultLocalDataSource(dbHelper);
     syncQueue = SyncQueueDataSource(dbHelper);
-    fakeRemote = FakeFirestoreDataSource();
-    fakeConnectivity = FakeConnectivityMonitor(online: true);
-
-    repository = FolderRepositoryImpl(
-      localDataSource: folderLocal,
-      wordLocalDataSource: wordLocal,
-      flashcardResultLocalDataSource: flashcardResultLocal,
-      remoteDataSource: fakeRemote,
-      syncQueueDataSource: syncQueue,
-      dbHelper: dbHelper,
-      connectivityMonitor: fakeConnectivity,
-    );
+    onLocalChangedCallCount = 0;
   });
+
+  FolderRepositoryImpl buildRepository({
+    FolderLocalDataSource? localDataSource,
+    WordLocalDataSource? wordLocalDataSource,
+    FlashcardResultLocalDataSource? flashcardResultLocalDataSource,
+    SyncQueueDataSource? syncQueueDataSource,
+  }) {
+    return FolderRepositoryImpl(
+      localDataSource: localDataSource ?? folderLocal,
+      wordLocalDataSource: wordLocalDataSource ?? wordLocal,
+      flashcardResultLocalDataSource:
+          flashcardResultLocalDataSource ?? flashcardResultLocal,
+      syncQueueDataSource: syncQueueDataSource ?? syncQueue,
+      dbHelper: dbHelper,
+      onLocalChanged: () => onLocalChangedCallCount++,
+    );
+  }
 
   Folder makeFolder(String id, {String? parentFolderId}) => Folder(
         id: id,
@@ -87,7 +148,8 @@ void main() {
         updatedAt: DateTime(2024, 1, 1),
       );
 
-  FlashcardResult makeFlashcardResult(String id, String folderId) => FlashcardResult(
+  FlashcardResult makeFlashcardResult(String id, String folderId) =>
+      FlashcardResult(
         id: id,
         folderId: folderId,
         totalCount: 10,
@@ -96,10 +158,14 @@ void main() {
         updatedAt: DateTime(2024, 1, 1),
       );
 
-  Future<void> insertFolder(String id, {String? parentFolderId}) =>
+  Future<void> insertFolder(
+    String id, {
+    String? parentFolderId,
+    String forUserId = userId,
+  }) =>
       folderLocal.insert(
         makeFolder(id, parentFolderId: parentFolderId),
-        userId: userId,
+        userId: forUserId,
       );
 
   Future<void> insertWord(String id, String folderId) => wordLocal.insert(
@@ -114,179 +180,262 @@ void main() {
         userId: userId,
       );
 
-  Future<List<Map<String, dynamic>>> queueRowsFor(
-    String tableName,
-    String recordId,
-    String operation,
-  ) async {
+  Future<Map<String, dynamic>?> folderRow(String id) async {
     final db = await dbHelper.database;
-    return db.query(
-      SyncQueueTable.tableName,
-      where: 'table_name = ? AND record_id = ? AND operation = ?',
-      whereArgs: [tableName, recordId, operation],
+    final rows = await db.query(
+      FolderTable.tableName,
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
     );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<Map<String, dynamic>?> wordRow(String id) async {
+    final db = await dbHelper.database;
+    final rows = await db.query(
+      WordTable.tableName,
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<Map<String, dynamic>?> flashcardResultRow(String id) async {
+    final db = await dbHelper.database;
+    final rows = await db.query(
+      FlashcardResultTable.tableName,
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
   }
 
   group('getFolders', () {
-    test('親フォルダIDを指定した場合、その配下のフォルダ一覧がローカルDBから取得できる', () async {
-      await insertFolder('root');
-      await insertFolder('child-1', parentFolderId: 'root');
-      await insertFolder('child-2', parentFolderId: 'root');
-      await insertFolder('other-root');
-
-      final result = await repository.getFolders(
-        userId: userId,
-        parentFolderId: 'root',
-      );
-
-      expect(result.isRight(), isTrue);
-      result.match(
-        (_) => fail('Right が返るはず'),
-        (folders) =>
-            expect(folders.map((f) => f.id).toSet(), {'child-1', 'child-2'}),
-      );
-    });
-
-    test('該当するフォルダが存在しない場合、空リストが返る', () async {
-      final result = await repository.getFolders(userId: userId);
-
-      expect(result.isRight(), isTrue);
-      result.match(
-        (_) => fail('Right が返るはず'),
-        (folders) => expect(folders, isEmpty),
-      );
-    });
-
-    test('ローカルDBアクセスで例外が発生した場合、Failure.unknownが返る', () async {
+    test(
+        'ローカルに未削除のフォルダ「A」「B」と削除済みのフォルダ「C」がある場合、'
+        '戻り値がRightで「A」「B」を含み「C」を含まない [FLD-R01]', () async {
+      final repository = buildRepository();
+      await insertFolder('A');
+      await insertFolder('B');
+      await insertFolder('C');
       final db = await dbHelper.database;
-      await db.execute('DROP TABLE ${FolderTable.tableName}');
+      await folderLocal.markDeleted(db, 'C', DateTime.now());
 
       final result = await repository.getFolders(userId: userId);
-
-      expect(result.isLeft(), isTrue);
-      result.match(
-        (failure) => expect(failure, isA<UnknownFailure>()),
-        (_) => fail('Left が返るはず'),
-      );
-
-      // 後続テストに影響しないようテーブルを復元する。
-      await FolderTable.onCreate(db);
-    });
-  });
-
-  group('createFolder - オンライン時', () {
-    test('フォルダを作成した場合、ローカル・リモート双方にsynced状態で保存される', () async {
-      final result = await repository.createFolder(
-        userId: userId,
-        name: 'new-folder',
-        parentFolderId: 'root',
-      );
 
       expect(result.isRight(), isTrue);
       result.match(
         (_) => fail('Right が返るはず'),
-        (folder) {
-          expect(folder.name, 'new-folder');
-          expect(folder.parentFolderId, 'root');
-          expect(folder.createdAt, folder.updatedAt);
+        (folders) {
+          final ids = folders.map((f) => f.id).toSet();
+          expect(ids.contains('A'), isTrue);
+          expect(ids.contains('B'), isTrue);
+          expect(ids.contains('C'), isFalse);
         },
       );
-
-      final id = result.match((_) => fail('Right が返るはず'), (f) => f.id);
-      expect(await folderLocal.findById(id), isNotNull);
-      expect(fakeRemote.writtenFolders, hasLength(1));
-      expect(fakeRemote.writtenFolders.single.userId, userId);
     });
 
-    test('リモート書き込みでFirebaseExceptionが発生した場合、Failure.networkが返る', () async {
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'unavailable',
-      );
+    test(
+        'ローカルにUのフォルダ「A」とユーザーVのフォルダ「D」がある場合、'
+        '戻り値がRightで「A」を含み「D」を含まない [FLD-R02]', () async {
+      final repository = buildRepository();
+      await insertFolder('A');
+      await insertFolder('D', forUserId: otherUserId);
 
-      final result = await repository.createFolder(
-        userId: userId,
-        name: 'new-folder',
-      );
+      final result = await repository.getFolders(userId: userId);
 
-      expect(result.isLeft(), isTrue);
       result.match(
-        (failure) => expect(failure, const Failure.network()),
-        (_) => fail('Left が返るはず'),
+        (_) => fail('Right が返るはず'),
+        (folders) {
+          final ids = folders.map((f) => f.id).toSet();
+          expect(ids.contains('A'), isTrue);
+          expect(ids.contains('D'), isFalse);
+        },
       );
     });
 
-    test('リモート書き込みで未知のFirebaseExceptionが発生した場合、Failure.unknownが返る', () async {
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'permission-denied',
-        message: 'denied',
-      );
+    test('オフラインで、ローカルにフォルダ「A」がある場合、戻り値がRightで「A」を含む [FLD-R03]',
+        () async {
+      final repository = buildRepository();
+      final fakeConnectivity = FakeConnectivityMonitor(online: false);
+      await fakeConnectivity.isOnline(); // オフライン状態を明示するだけで、結果には影響しない
+      await insertFolder('A');
 
-      final result = await repository.createFolder(
-        userId: userId,
-        name: 'new-folder',
-      );
+      final result = await repository.getFolders(userId: userId);
 
-      expect(result.isLeft(), isTrue);
       result.match(
-        (failure) => expect(failure, const Failure.unknown('denied')),
-        (_) => fail('Left が返るはず'),
+        (_) => fail('Right が返るはず'),
+        (folders) => expect(folders.map((f) => f.id), contains('A')),
       );
     });
 
-    test('ローカル書き込みで想定外の例外が発生した場合、Failure.unknownが返る', () async {
-      final db = await dbHelper.database;
-      await db.execute('DROP TABLE ${FolderTable.tableName}');
-
-      final result = await repository.createFolder(
-        userId: userId,
-        name: 'new-folder',
+    test('ローカルの読み取りが失敗した場合、戻り値がLeft(UnknownFailure) [FLD-R04]',
+        () async {
+      final repository = buildRepository(
+        localDataSource: ThrowingFindByUserIdFolderLocalDataSource(dbHelper),
       );
+
+      final result = await repository.getFolders(userId: userId);
 
       expect(result.isLeft(), isTrue);
       result.match(
         (failure) => expect(failure, isA<UnknownFailure>()),
         (_) => fail('Left が返るはず'),
       );
-
-      // 後続テストに影響しないようテーブルを復元する。
-      await FolderTable.onCreate(db);
     });
   });
 
-  group('createFolder - オフライン時', () {
-    setUp(() {
-      fakeConnectivity.setOnline(false);
-    });
+  group('createFolder', () {
+    test(
+        'オンラインで、名前「A」で登録した場合、戻り値がRightで名前が「A」、createdAtとupdatedAtが等しい。'
+        'その後のgetFoldersに「A」が含まれる。キューが1件増える [FLD-C01]', () async {
+      final repository = buildRepository();
 
-    test('フォルダを作成した場合、ローカルにpending状態で保存されsync_queueにcreate登録される', () async {
-      final result = await repository.createFolder(
-        userId: userId,
-        name: 'new-folder',
-      );
+      final result = await repository.createFolder(userId: userId, name: 'A');
 
       expect(result.isRight(), isTrue);
-      final id = result.match((_) => fail('Right が返るはず'), (f) => f.id);
+      final folder =
+          result.match((_) => fail('Right が返るはず'), (f) => f);
+      expect(folder.name, 'A');
+      expect(folder.createdAt, folder.updatedAt);
 
-      expect(await folderLocal.findById(id), isNotNull);
-      expect(
-        await queueRowsFor(FolderTable.tableName, id, 'create'),
-        hasLength(1),
+      final after = await repository.getFolders(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (folders) => expect(folders.map((f) => f.id), contains(folder.id)),
       );
-      expect(fakeRemote.writtenFolders, isEmpty);
+      expect(await syncQueue.countByUser(userId), 1);
+    });
+
+    test(
+        'オフラインで、名前「A」で登録した場合、戻り値がRightで名前が「A」。'
+        'その後のgetFoldersに「A」が含まれる。キューが1件増える [FLD-C02]', () async {
+      final repository = buildRepository();
+      final fakeConnectivity = FakeConnectivityMonitor(online: false);
+      await fakeConnectivity.isOnline();
+
+      final result = await repository.createFolder(userId: userId, name: 'A');
+
+      expect(result.isRight(), isTrue);
+      final folder =
+          result.match((_) => fail('Right が返るはず'), (f) => f);
+      expect(folder.name, 'A');
+
+      final after = await repository.getFolders(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (folders) => expect(folders.map((f) => f.id), contains(folder.id)),
+      );
+      expect(await syncQueue.countByUser(userId), 1);
+    });
+
+    test(
+        'ローカルへのフォルダの保存が失敗した場合、戻り値がLeft(UnknownFailure)。'
+        'その後のgetFoldersに登録しようとしたフォルダが含まれない。キューの件数が変わらない [FLD-C03]',
+        () async {
+      final repository = buildRepository(
+        localDataSource: ThrowingSaveFolderLocalDataSource(dbHelper),
+      );
+
+      final result = await repository.createFolder(userId: userId, name: 'A');
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, isA<UnknownFailure>()),
+        (_) => fail('Left が返るはず'),
+      );
+      final after = await folderLocal.findByUserId(userId);
+      expect(after.where((f) => f.name == 'A'), isEmpty);
+      expect(await syncQueue.countByUser(userId), 0);
+    });
+
+    test(
+        'フォルダの保存は成功し、キューへの登録が失敗した場合、戻り値がLeft(UnknownFailure)。'
+        'その後のgetFoldersに登録しようとしたフォルダが含まれない。キューの件数が変わらない [FLD-C04]',
+        () async {
+      final repository = buildRepository(
+        syncQueueDataSource: ThrowingEnqueueSyncQueueDataSource(dbHelper),
+      );
+
+      final result = await repository.createFolder(userId: userId, name: 'A');
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, isA<UnknownFailure>()),
+        (_) => fail('Left が返るはず'),
+      );
+      final after = await folderLocal.findByUserId(userId);
+      expect(after.where((f) => f.name == 'A'), isEmpty);
+      expect(await syncQueue.countByUser(userId), 0);
+    });
+
+    test('親フォルダGを指定して、名前「A」で登録した場合、戻り値がRightでparentFolderIdがGのid [FLD-C05]',
+        () async {
+      final repository = buildRepository();
+      await insertFolder('G');
+
+      final result = await repository.createFolder(
+        userId: userId,
+        name: 'A',
+        parentFolderId: 'G',
+      );
+
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (folder) => expect(folder.parentFolderId, 'G'),
+      );
+    });
+
+    test('登録した直後（送信前）は、ローカルのそのフォルダのsyncStatusがpending、deletedAtがnull [FLD-C06]',
+        () async {
+      final repository = buildRepository();
+
+      final result = await repository.createFolder(userId: userId, name: 'A');
+      final folder = result.match((_) => fail('Right が返るはず'), (f) => f);
+
+      final row = await folderRow(folder.id);
+      expect(row, isNotNull);
+      expect(row!['syncStatus'], 'pending');
+      expect(row['deletedAt'], isNull);
+    });
+
+    test(
+        '削除済みのフォルダGを親に指定して、名前「A」で登録した場合、'
+        '戻り値がLeft(NotFoundFailure)。キューの件数が変わらない [FLD-C07]', () async {
+      final repository = buildRepository();
+      await insertFolder('G');
+      final db = await dbHelper.database;
+      await folderLocal.markDeleted(db, 'G', DateTime.now());
+
+      final result = await repository.createFolder(
+        userId: userId,
+        name: 'A',
+        parentFolderId: 'G',
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, const Failure.notFound()),
+        (_) => fail('Left が返るはず'),
+      );
+      expect(await syncQueue.countByUser(userId), 0);
     });
   });
 
-  group('updateFolder - オンライン時', () {
-    test('既存フォルダを更新した場合、createdAtとparentFolderIdは維持されnameとupdatedAtが更新される',
-        () async {
+  group('updateFolder', () {
+    test(
+        'オンラインで、ローカルのフォルダF（名前「A」）を名前「B」に編集した場合、'
+        '戻り値がRightで名前が「B」、createdAtが編集前と等しく、updatedAtが編集前のupdatedAtより後。'
+        'その後のgetFoldersのFの名前が「B」。キューが1件増える [FLD-U01]', () async {
+      final repository = buildRepository();
       final createdAt = DateTime(2023, 5, 1);
       await folderLocal.insert(
         Folder(
-          id: 'folder-1',
-          name: 'old-name',
-          parentFolderId: 'root',
+          id: 'F',
+          name: 'A',
           createdAt: createdAt,
           updatedAt: createdAt,
         ),
@@ -295,91 +444,108 @@ void main() {
 
       final result = await repository.updateFolder(
         userId: userId,
-        folderId: 'folder-1',
-        name: 'new-name',
+        folderId: 'F',
+        name: 'B',
       );
 
       expect(result.isRight(), isTrue);
       result.match(
         (_) => fail('Right が返るはず'),
         (folder) {
-          expect(folder.name, 'new-name');
-          expect(folder.parentFolderId, 'root');
+          expect(folder.name, 'B');
           expect(folder.createdAt, createdAt);
           expect(folder.updatedAt.isAfter(createdAt), isTrue);
         },
       );
-      expect(fakeRemote.writtenFolders, hasLength(1));
+      final after = await repository.getFolders(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (folders) =>
+            expect(folders.firstWhere((f) => f.id == 'F').name, 'B'),
+      );
+      expect(await syncQueue.countByUser(userId), 1);
     });
 
-    test('存在しないフォルダIDを指定した場合、createdAtに現在時刻が使われparentFolderIdはnullになる',
+    test(
+        'オフラインで、ローカルのフォルダF（名前「A」）を名前「B」に編集した場合、'
+        '戻り値がRightで名前が「B」。その後のgetFoldersのFの名前が「B」。キューが1件増える [FLD-U02]',
         () async {
+      final repository = buildRepository();
+      final fakeConnectivity = FakeConnectivityMonitor(online: false);
+      await fakeConnectivity.isOnline();
+      await insertFolder('F');
+
       final result = await repository.updateFolder(
         userId: userId,
-        folderId: 'not-exist',
-        name: 'new-name',
+        folderId: 'F',
+        name: 'B',
       );
 
       expect(result.isRight(), isTrue);
       result.match(
         (_) => fail('Right が返るはず'),
-        (folder) {
-          expect(folder.parentFolderId, isNull);
-          expect(folder.createdAt, folder.updatedAt);
-        },
+        (folder) => expect(folder.name, 'B'),
       );
+      expect(await syncQueue.countByUser(userId), 1);
     });
 
-    test('リモート書き込みでFirebaseExceptionが発生した場合、Failure.networkが返る', () async {
-      await insertFolder('folder-1');
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'network-request-failed',
-      );
+    test('ローカルに存在しないidを指定して編集した場合、戻り値がLeft(NotFoundFailure)。キューの件数が変わらない [FLD-U03]',
+        () async {
+      final repository = buildRepository();
 
       final result = await repository.updateFolder(
         userId: userId,
-        folderId: 'folder-1',
-        name: 'new-name',
+        folderId: 'not-exist',
+        name: 'B',
       );
 
       expect(result.isLeft(), isTrue);
       result.match(
-        (failure) => expect(failure, const Failure.network()),
+        (failure) => expect(failure, const Failure.notFound()),
         (_) => fail('Left が返るはず'),
       );
+      expect(await syncQueue.countByUser(userId), 0);
     });
 
-    test('リモート書き込みで未知のFirebaseExceptionが発生した場合、Failure.unknownが返る', () async {
-      await insertFolder('folder-1');
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'permission-denied',
-        message: 'denied',
-      );
-
-      final result = await repository.updateFolder(
-        userId: userId,
-        folderId: 'folder-1',
-        name: 'new-name',
-      );
-
-      expect(result.isLeft(), isTrue);
-      result.match(
-        (failure) => expect(failure, const Failure.unknown('denied')),
-        (_) => fail('Left が返るはず'),
-      );
-    });
-
-    test('ローカル更新で想定外の例外が発生した場合、Failure.unknownが返る', () async {
-      await insertFolder('folder-1');
+    test(
+        '削除済みのフォルダFを指定して編集した場合、戻り値がLeft(NotFoundFailure)。'
+        'その後のgetFoldersにFが含まれない。キューの件数が変わらない [FLD-U04]', () async {
+      final repository = buildRepository();
+      await insertFolder('F');
       final db = await dbHelper.database;
-      await db.execute('DROP TABLE ${FolderTable.tableName}');
+      await folderLocal.markDeleted(db, 'F', DateTime.now());
 
       final result = await repository.updateFolder(
         userId: userId,
-        folderId: 'folder-1',
-        name: 'new-name',
+        folderId: 'F',
+        name: 'B',
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, const Failure.notFound()),
+        (_) => fail('Left が返るはず'),
+      );
+      final after = await repository.getFolders(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (folders) => expect(folders.map((f) => f.id), isNot(contains('F'))),
+      );
+      expect(await syncQueue.countByUser(userId), 0);
+    });
+
+    test(
+        'ローカルのフォルダF（名前「A」）の編集で、ローカルへの保存が失敗した場合、戻り値がLeft(UnknownFailure)。'
+        'その後のgetFoldersのFの名前が「A」のまま。キューの件数が変わらない [FLD-U05]', () async {
+      await insertFolder('F');
+      final repository = buildRepository(
+        localDataSource: ThrowingSaveFolderLocalDataSource(dbHelper),
+      );
+
+      final result = await repository.updateFolder(
+        userId: userId,
+        folderId: 'F',
+        name: 'B',
       );
 
       expect(result.isLeft(), isTrue);
@@ -387,237 +553,288 @@ void main() {
         (failure) => expect(failure, isA<UnknownFailure>()),
         (_) => fail('Left が返るはず'),
       );
-
-      // 後続テストに影響しないようテーブルを復元する。
-      await FolderTable.onCreate(db);
-    });
-  });
-
-  group('updateFolder - オフライン時', () {
-    setUp(() {
-      fakeConnectivity.setOnline(false);
+      final after = await folderLocal.findByUserId(userId);
+      expect(after.firstWhere((f) => f.id == 'F').name, 'folder-F');
+      expect(await syncQueue.countByUser(userId), 0);
     });
 
-    test('フォルダを更新した場合、ローカルがpending状態で更新されsync_queueにupdate登録される', () async {
-      await insertFolder('folder-1');
+    test(
+        'ローカルのフォルダF（名前「A」）を、同じ名前「A」で編集した場合、'
+        '戻り値がRightで、updatedAtが編集前のupdatedAtより後。キューが1件増える [FLD-U06]', () async {
+      final repository = buildRepository();
+      final createdAt = DateTime(2023, 5, 1);
+      await folderLocal.insert(
+        Folder(
+          id: 'F',
+          name: 'A',
+          createdAt: createdAt,
+          updatedAt: createdAt,
+        ),
+        userId: userId,
+      );
 
       final result = await repository.updateFolder(
         userId: userId,
-        folderId: 'folder-1',
-        name: 'new-name',
+        folderId: 'F',
+        name: 'A',
       );
 
       expect(result.isRight(), isTrue);
-      final updated = await folderLocal.findById('folder-1');
-      expect(updated?.name, 'new-name');
-      expect(
-        await queueRowsFor(FolderTable.tableName, 'folder-1', 'update'),
-        hasLength(1),
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (folder) => expect(folder.updatedAt.isAfter(createdAt), isTrue),
       );
-      expect(fakeRemote.writtenFolders, isEmpty);
+      expect(await syncQueue.countByUser(userId), 1);
     });
-  });
 
-  group('deleteFolder - オンライン時', () {
-    test(
-        '子フォルダ・単語・成績データを持たない単一フォルダを削除した場合、'
-        'ローカルとリモートの両方からフォルダが削除される', () async {
-      await insertFolder('root');
+    test('ユーザーVのフォルダGのidを指定して、Uとして編集した場合、戻り値がLeft(NotFoundFailure)。Gの名前は変わらない [FLD-U07]',
+        () async {
+      final repository = buildRepository();
+      await insertFolder('G', forUserId: otherUserId);
 
-      final result = await repository.deleteFolder(
+      final result = await repository.updateFolder(
         userId: userId,
-        folderId: 'root',
-      );
-
-      expect(result.isRight(), isTrue);
-      expect(await folderLocal.findById('root'), isNull);
-      expect(fakeRemote.deletedFolders, [
-        (userId: userId, folderId: 'root'),
-      ]);
-    });
-
-    test('フォルダ配下の単語がある場合、単語もローカル・リモートの両方から削除される', () async {
-      await insertFolder('root');
-      await insertWord('word-1', 'root');
-      await insertWord('word-2', 'root');
-
-      await repository.deleteFolder(userId: userId, folderId: 'root');
-
-      expect(await wordLocal.findByFolderId('root', userId: userId), isEmpty);
-      expect(fakeRemote.deletedWords, [
-        (userId: userId, folderId: 'root', wordId: 'word-1'),
-        (userId: userId, folderId: 'root', wordId: 'word-2'),
-      ]);
-    });
-
-    test('フォルダ配下の成績データがある場合、成績データもローカル・リモートの両方から削除される', () async {
-      await insertFolder('root');
-      await insertFlashcardResult('result-1', 'root');
-
-      await repository.deleteFolder(userId: userId, folderId: 'root');
-
-      expect(
-        await flashcardResultLocal.findByUserId(userId, folderId: 'root'),
-        isEmpty,
-      );
-      expect(fakeRemote.deletedFlashcardResults, [
-        (userId: userId, flashcardResultId: 'result-1'),
-      ]);
-    });
-
-    test('サブフォルダが存在する場合、サブフォルダも再帰的に削除される', () async {
-      await insertFolder('root');
-      await insertFolder('child', parentFolderId: 'root');
-
-      await repository.deleteFolder(userId: userId, folderId: 'root');
-
-      expect(await folderLocal.findById('root'), isNull);
-      expect(await folderLocal.findById('child'), isNull);
-      expect(
-        fakeRemote.deletedFolders.map((e) => e.folderId).toSet(),
-        {'root', 'child'},
-      );
-    });
-
-    test('孫フォルダまで存在する深いネストの場合も、すべての階層が再帰的に削除される', () async {
-      await insertFolder('root');
-      await insertFolder('child', parentFolderId: 'root');
-      await insertFolder('grandchild', parentFolderId: 'child');
-      await insertWord('word-1', 'grandchild');
-      await insertFlashcardResult('result-1', 'grandchild');
-
-      await repository.deleteFolder(userId: userId, folderId: 'root');
-
-      expect(await folderLocal.findById('root'), isNull);
-      expect(await folderLocal.findById('child'), isNull);
-      expect(await folderLocal.findById('grandchild'), isNull);
-      expect(
-        await wordLocal.findByFolderId('grandchild', userId: userId),
-        isEmpty,
-      );
-      expect(
-        await flashcardResultLocal.findByUserId(userId, folderId: 'grandchild'),
-        isEmpty,
-      );
-      expect(
-        fakeRemote.deletedFolders.map((e) => e.folderId).toSet(),
-        {'root', 'child', 'grandchild'},
-      );
-      expect(fakeRemote.deletedWords, [
-        (userId: userId, folderId: 'grandchild', wordId: 'word-1'),
-      ]);
-      expect(fakeRemote.deletedFlashcardResults, [
-        (userId: userId, flashcardResultId: 'result-1'),
-      ]);
-    });
-
-    test('兄弟フォルダが存在する場合、削除対象ではない兄弟フォルダは削除されない', () async {
-      await insertFolder('root');
-      await insertFolder('child-a', parentFolderId: 'root');
-      await insertFolder('sibling');
-
-      await repository.deleteFolder(userId: userId, folderId: 'root');
-
-      expect(await folderLocal.findById('sibling'), isNotNull);
-      expect(
-        fakeRemote.deletedFolders.map((e) => e.folderId).toSet(),
-        {'root', 'child-a'},
-      );
-    });
-
-    test('リモート削除でFirebaseExceptionが発生した場合、Failure.networkが返る', () async {
-      await insertFolder('root');
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'unavailable',
-      );
-
-      final result = await repository.deleteFolder(
-        userId: userId,
-        folderId: 'root',
+        folderId: 'G',
+        name: 'B',
       );
 
       expect(result.isLeft(), isTrue);
       result.match(
-        (failure) => expect(failure, const Failure.network()),
+        (failure) => expect(failure, const Failure.notFound()),
         (_) => fail('Left が返るはず'),
+      );
+      final row = await folderRow('G');
+      expect(row!['name'], 'folder-G');
+    });
+
+    test(
+        'ローカルのフォルダFの編集で、保存は成功しキューへの登録が失敗した場合、戻り値がLeft(UnknownFailure)。'
+        'その後のgetFoldersのFの名前が編集前のまま [FLD-U08]', () async {
+      await insertFolder('F');
+      final repository = buildRepository(
+        syncQueueDataSource: ThrowingEnqueueSyncQueueDataSource(dbHelper),
+      );
+
+      final result = await repository.updateFolder(
+        userId: userId,
+        folderId: 'F',
+        name: 'B',
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, isA<UnknownFailure>()),
+        (_) => fail('Left が返るはず'),
+      );
+      final after = await repository.getFolders(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (folders) =>
+            expect(folders.firstWhere((f) => f.id == 'F').name, 'folder-F'),
       );
     });
   });
 
-  group('deleteFolder - オフライン時', () {
-    setUp(() {
-      fakeConnectivity.setOnline(false);
+  group('deleteFolder', () {
+    test(
+        'オンラインで、ローカルのフォルダF（配下なし）を削除した場合、戻り値がRight(unit)。'
+        'その後のgetFoldersにFが含まれない。ローカルのFのdeletedAtが入り、'
+        'updatedAtが削除前のupdatedAtより後。キューが1件増える [FLD-X01]', () async {
+      final repository = buildRepository();
+      final createdAt = DateTime(2023, 5, 1);
+      await folderLocal.insert(
+        Folder(
+          id: 'F',
+          name: 'A',
+          createdAt: createdAt,
+          updatedAt: createdAt,
+        ),
+        userId: userId,
+      );
+
+      final result =
+          await repository.deleteFolder(userId: userId, folderId: 'F');
+
+      expect(result.isRight(), isTrue);
+      final after = await repository.getFolders(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (folders) => expect(folders.map((f) => f.id), isNot(contains('F'))),
+      );
+      final row = await folderRow('F');
+      expect(row!['deletedAt'], isNotNull);
+      expect(fromDateColumn(row['updatedAt']).isAfter(createdAt), isTrue);
+      expect(await syncQueue.countByUser(userId), 1);
     });
 
-    Future<List<Map<String, dynamic>>> queueRowsFor(
-      String tableName,
-      String recordId,
-    ) async {
-      final db = await dbHelper.database;
-      return db.query(
-        SyncQueueTable.tableName,
-        where: 'table_name = ? AND record_id = ? AND operation = ?',
-        whereArgs: [tableName, recordId, 'delete'],
+    test(
+        'オフラインで、ローカルのフォルダF（配下なし）を削除した場合、戻り値がRight(unit)。'
+        'その後のgetFoldersにFが含まれない。キューが1件増える [FLD-X02]', () async {
+      final repository = buildRepository();
+      final fakeConnectivity = FakeConnectivityMonitor(online: false);
+      await fakeConnectivity.isOnline();
+      await insertFolder('F');
+
+      final result =
+          await repository.deleteFolder(userId: userId, folderId: 'F');
+
+      expect(result.isRight(), isTrue);
+      final after = await repository.getFolders(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (folders) => expect(folders.map((f) => f.id), isNot(contains('F'))),
       );
-    }
+      expect(await syncQueue.countByUser(userId), 1);
+    });
 
     test(
-        '子フォルダ・単語・成績データを持たない単一フォルダを削除した場合、'
-        'ローカルから削除されsync_queueにdelete登録される', () async {
-      await insertFolder('root');
+        'フォルダFに子フォルダG、Gに単語W、Fに成績Rがある状態でFを削除した場合、戻り値がRight(unit)。'
+        'ローカルのF・G・W・Rのdeletedatがすべて入る。getWords（G）にWが含まれない。'
+        'getFlashcardResultsにRが含まれない。キューが4件（F・G・W・R）増える [FLD-X03]', () async {
+      final repository = buildRepository();
+      await insertFolder('F');
+      await insertFolder('G', parentFolderId: 'F');
+      await insertWord('W', 'G');
+      await insertFlashcardResult('R', 'F');
+
+      final result =
+          await repository.deleteFolder(userId: userId, folderId: 'F');
+
+      expect(result.isRight(), isTrue);
+      for (final id in ['F', 'G']) {
+        final row = await folderRow(id);
+        expect(row!['deletedAt'], isNotNull);
+      }
+      expect((await wordRow('W'))!['deletedAt'], isNotNull);
+      expect((await flashcardResultRow('R'))!['deletedAt'], isNotNull);
+      expect(
+        await wordLocal.findByFolderId('G', userId: userId),
+        isEmpty,
+      );
+      expect(
+        await flashcardResultLocal.findByUserId(userId, folderId: 'F'),
+        isEmpty,
+      );
+      expect(await syncQueue.countByUser(userId), 4);
+    });
+
+    test('FLD-X03と同じ配下がある状態でFを削除した場合、ローカルのG・W・RのdeletedAtがFのdeletedAtと等しい [FLD-X04]',
+        () async {
+      final repository = buildRepository();
+      await insertFolder('F');
+      await insertFolder('G', parentFolderId: 'F');
+      await insertWord('W', 'G');
+      await insertFlashcardResult('R', 'F');
+
+      await repository.deleteFolder(userId: userId, folderId: 'F');
+
+      final fDeletedAt =
+          fromDateColumn((await folderRow('F'))!['deletedAt']);
+      final gDeletedAt =
+          fromDateColumn((await folderRow('G'))!['deletedAt']);
+      final wDeletedAt = fromDateColumn((await wordRow('W'))!['deletedAt']);
+      final rDeletedAt =
+          fromDateColumn((await flashcardResultRow('R'))!['deletedAt']);
+      expect(gDeletedAt, fDeletedAt);
+      expect(wDeletedAt, fDeletedAt);
+      expect(rDeletedAt, fDeletedAt);
+    });
+
+    test('ローカルに存在しないidを指定して削除した場合、戻り値がLeft(NotFoundFailure)。キューの件数が変わらない [FLD-X05]',
+        () async {
+      final repository = buildRepository();
 
       final result = await repository.deleteFolder(
         userId: userId,
-        folderId: 'root',
+        folderId: 'not-exist',
       );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, const Failure.notFound()),
+        (_) => fail('Left が返るはず'),
+      );
+      expect(await syncQueue.countByUser(userId), 0);
+    });
+
+    test('削除済みのフォルダFを指定して削除した場合、戻り値がLeft(NotFoundFailure)。キューの件数が変わらない [FLD-X06]',
+        () async {
+      final repository = buildRepository();
+      await insertFolder('F');
+      final db = await dbHelper.database;
+      await folderLocal.markDeleted(db, 'F', DateTime.now());
+
+      final result =
+          await repository.deleteFolder(userId: userId, folderId: 'F');
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, const Failure.notFound()),
+        (_) => fail('Left が返るはず'),
+      );
+      expect(await syncQueue.countByUser(userId), 0);
+    });
+
+    test(
+        'FLD-X03と同じ配下がある状態でFを削除し、配下の単語Wの保存が失敗した場合、戻り値がLeft(UnknownFailure)。'
+        'ローカルのF・G・W・RのdeletedAtがすべてnullのまま。キューの件数が変わらない [FLD-X07]', () async {
+      await insertFolder('F');
+      await insertFolder('G', parentFolderId: 'F');
+      await insertWord('W', 'G');
+      await insertFlashcardResult('R', 'F');
+      final repository = buildRepository(
+        wordLocalDataSource: ThrowingMarkDeletedWordLocalDataSource(dbHelper),
+      );
+
+      final result =
+          await repository.deleteFolder(userId: userId, folderId: 'F');
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, isA<UnknownFailure>()),
+        (_) => fail('Left が返るはず'),
+      );
+      for (final id in ['F', 'G']) {
+        expect((await folderRow(id))!['deletedAt'], isNull);
+      }
+      expect((await wordRow('W'))!['deletedAt'], isNull);
+      expect((await flashcardResultRow('R'))!['deletedAt'], isNull);
+      expect(await syncQueue.countByUser(userId), 0);
+    });
+
+    test('ユーザーVのフォルダGのidを指定して、Uとして削除した場合、戻り値がLeft(NotFoundFailure)。GのdeletedAtはnullのまま [FLD-X08]',
+        () async {
+      final repository = buildRepository();
+      await insertFolder('G', forUserId: otherUserId);
+
+      final result =
+          await repository.deleteFolder(userId: userId, folderId: 'G');
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, const Failure.notFound()),
+        (_) => fail('Left が返るはず'),
+      );
+      expect((await folderRow('G'))!['deletedAt'], isNull);
+    });
+
+    test(
+        '削除済みの子フォルダG（deletedAtがFの削除より前）を持つフォルダFを削除した場合、'
+        'ローカルのGのdeletedAtが変わらない。キューが1件（F）増える [FLD-X09]', () async {
+      final repository = buildRepository();
+      await insertFolder('F');
+      await insertFolder('G', parentFolderId: 'F');
+      final earlierDeletedAt = DateTime(2024, 1, 2);
+      final db = await dbHelper.database;
+      await folderLocal.markDeleted(db, 'G', earlierDeletedAt);
+
+      final result =
+          await repository.deleteFolder(userId: userId, folderId: 'F');
 
       expect(result.isRight(), isTrue);
-      expect(await folderLocal.findById('root'), isNull);
-      expect(await queueRowsFor(FolderTable.tableName, 'root'), hasLength(1));
-      expect(fakeRemote.deletedFolders, isEmpty);
-    });
-
-    test('フォルダ配下の単語・成績データがある場合、'
-        'それらもローカルから削除されsync_queueにdelete登録される', () async {
-      await insertFolder('root');
-      await insertWord('word-1', 'root');
-      await insertFlashcardResult('result-1', 'root');
-
-      await repository.deleteFolder(userId: userId, folderId: 'root');
-
-      expect(await wordLocal.findByFolderId('root', userId: userId), isEmpty);
-      expect(
-        await flashcardResultLocal.findByUserId(userId, folderId: 'root'),
-        isEmpty,
-      );
-      expect(await queueRowsFor(WordTable.tableName, 'word-1'), hasLength(1));
-      expect(
-        await queueRowsFor(FlashcardResultTable.tableName, 'result-1'),
-        hasLength(1),
-      );
-    });
-
-    test('孫フォルダまで存在する深いネストの場合も、'
-        'すべての階層が再帰的に削除されsync_queueに登録される', () async {
-      await insertFolder('root');
-      await insertFolder('child', parentFolderId: 'root');
-      await insertFolder('grandchild', parentFolderId: 'child');
-      await insertWord('word-1', 'grandchild');
-
-      await repository.deleteFolder(userId: userId, folderId: 'root');
-
-      expect(await folderLocal.findById('root'), isNull);
-      expect(await folderLocal.findById('child'), isNull);
-      expect(await folderLocal.findById('grandchild'), isNull);
-      expect(
-        await wordLocal.findByFolderId('grandchild', userId: userId),
-        isEmpty,
-      );
-      for (final id in ['root', 'child', 'grandchild']) {
-        expect(await queueRowsFor(FolderTable.tableName, id), hasLength(1));
-      }
-      expect(await queueRowsFor(WordTable.tableName, 'word-1'), hasLength(1));
+      final gRow = await folderRow('G');
+      expect(fromDateColumn(gRow!['deletedAt']), earlierDeletedAt);
+      expect(await syncQueue.countByUser(userId), 1);
     });
   });
 }

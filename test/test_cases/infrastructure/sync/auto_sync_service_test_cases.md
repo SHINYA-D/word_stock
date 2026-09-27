@@ -1,89 +1,93 @@
-# auto_sync_service_test_cases.md
-
 ## 対象クラス / メソッド
 
 | 項目 | 値 |
 |------|-----|
 | ファイルパス | lib/infrastructure/sync/auto_sync_service.dart |
 | クラス名 | AutoSyncService |
-| テスト対象メソッド | start() / stop() |
-
-## 実行環境について
-
-`AutoSyncService` は `ConnectivityMonitor`（インターフェース）と `SyncService`（具象クラス）に
-依存する。以下の方針で Dart Pure Test として実行できるようにしている。
-
-- **ConnectivityMonitor**: `test/helpers/fake_infrastructure.dart` の `FakeConnectivityMonitor`
-  （単発イベントのみ流せる）に加え、複数回の状態変化を時系列で発火させたいケースのために、
-  本テストファイル内に `StreamController` ベースの `ControllableConnectivityMonitor` を定義した。
-- **SyncService**: インターフェースではなく具象クラスであり、コンストラクタが
-  `SyncQueueDataSource` / `FirebaseFirestore` / `DatabaseHelper` を要求するため、
-  `fake_cloud_firestore` の `FakeFirebaseFirestore` と実 `DatabaseHelper`（シングルトン、
-  実際の DB アクセスは行わせない）で型要件のみ満たし、`syncLocalToRemote()` をオーバーライドして
-  呼び出し回数・引数を記録する `FakeSyncService`（本テストファイル内に定義）を使用する。
+| テスト対象メソッド | start() / stop() / onSignedIn() / onResumed() / onLocalChanged() |
+| 仕様書 | docs/detailed_design/online_offline/online_offline.md |
 
 ## テストケース一覧
 
-| # | テスト名 | カテゴリ | 対象メソッド | 状態 |
-|---|---------|---------|-----------|------|
-| 1 | オンライン状態への変化を検知した場合、SyncService.syncLocalToRemoteが呼ばれる | 正常系 | start() | ✅ |
-| 2 | オフライン状態の通知を受けた場合、SyncService.syncLocalToRemoteは呼ばれない | 異常系 | start() | ✅ |
-| 3 | オフライン→オンラインと複数回状態が変化した場合、オンラインになった回数分だけsyncLocalToRemoteが呼ばれる | 境界値 | start() | ✅ |
-| 4 | startを2回連続で呼んだ場合、古い購読が解除され通知は二重に処理されない | 境界値 | start() | ✅ |
-| 5 | stopを呼んだ後は、オンライン通知が来てもsyncLocalToRemoteは呼ばれない | 正常系 | stop() | ✅ |
-| 6 | startされていない状態でstopを呼んでも例外は発生しない | 境界値 | stop() | ✅ |
+| # | テスト名 | 仕様ID | カテゴリ | 対象メソッド | 状態 |
+|---|---------|--------|---------|-----------|------|
+| 1 | ログイン済み・オンラインで、リモートのフォルダFがローカルより新しく(名前B)、キューにフォルダGの登録が1件ある状態でアプリを起動した場合、ローカルのFの名前がBになりリモートにGができてキューが0件になる [SYN-T01] | SYN-T01 #3efed7 | 正常系 | onSignedIn() | ✅ |
+| 2 | ログイン済み・オフラインで、キューにフォルダGの登録が1件ある状態でアプリを起動した場合、リモートへの読み取り・書き込みが呼ばれずキューが1件のまま [SYN-T02] | SYN-T02 #85bacd | 異常系 | onSignedIn() | ✅ |
+| 3 | 未ログイン・オンラインでアプリを起動した場合、リモートへの読み取り・書き込みが呼ばれない [SYN-T03] | SYN-T03 #09134e | 異常系 | onSignedIn() | ✅ |
+| 4 | オフラインでフォルダFを編集し(キューにFの項目が1件)、オンラインに戻った場合、取得の読み取りがすべて終わった後に送信の書き込みが始まる [SYN-T04] | SYN-T04 #644177 | 正常系 | start() | ✅ |
+| 5 | オンラインからオフラインに変わった場合、リモートへの読み取り・書き込みが呼ばれない [SYN-T07] | SYN-T07 #fb1fde | 異常系 | start() | ✅ |
+| 6 | 前回の取得から5分以上たった状態で、リモートのフォルダFがローカルより新しく(名前B)、アプリがバックグラウンドから戻った場合、ローカルのFの名前がBになる [SYN-T08] | SYN-T08 #fad5ee | 正常系 | onResumed() | ✅ |
+| 7 | オンラインで Repository からフォルダFを登録した場合、リモートにFができキューが0件で取得の読み取りは呼ばれない [SYN-T12] | SYN-T12 #4bf68c | 正常系 | onLocalChanged() | ✅ |
+| 8 | オフラインで Repository からフォルダFを登録した場合、リモートへの書き込みが呼ばれずキューにFの項目が1件になる [SYN-T13] | SYN-T13 #ce23a6 | 異常系 | onLocalChanged() | ✅ |
 
 ## テストケース詳細
 
-### テストケース1: オンライン状態への変化を検知した場合、SyncService.syncLocalToRemoteが呼ばれる
+### テストケース1: ログイン済み・オンラインで、リモートのフォルダFがローカルより新しく(名前B)、キューにフォルダGの登録が1件ある状態でアプリを起動した場合、ローカルのFの名前がBになりリモートにGができてキューが0件になる [SYN-T01]
+- **カテゴリ**: 正常系
+- **対象メソッド**: onSignedIn()
+- **事前条件**: U がログイン済み・オンライン。ローカルにフォルダF(名前A)があり、リモートのF(名前B)がローカルより新しい。キューにフォルダG(名前G)の登録が1件ある
+- **入力値・テスト条件**: `start()` の後に `onSignedIn()` を呼ぶ（アプリの起動を模す）
+- **操作手順**: `autoSync.start(); autoSync.onSignedIn();` を呼び、`syncService.syncAll()` を await して完了を待つ
+- **期待結果**: ローカルのFの名前が「B」。リモートにGがある。キューが0件
+
+### テストケース2: ログイン済み・オフラインで、キューにフォルダGの登録が1件ある状態でアプリを起動した場合、リモートへの読み取り・書き込みが呼ばれずキューが1件のまま [SYN-T02]
+- **カテゴリ**: 異常系
+- **対象メソッド**: onSignedIn()
+- **事前条件**: U がログイン済み・オフライン。キューにフォルダGの登録が1件ある
+- **入力値・テスト条件**: `start()` の後に `onSignedIn()` を呼ぶ
+- **操作手順**: `autoSync.start(); autoSync.onSignedIn();` を呼び、完了を待つ
+- **期待結果**: リモートへの読み取り・書き込みが呼ばれない（`fakeRemote.calls` が空）。キューが1件のまま
+
+### テストケース3: 未ログイン・オンラインでアプリを起動した場合、リモートへの読み取り・書き込みが呼ばれない [SYN-T03]
+- **カテゴリ**: 異常系
+- **対象メソッド**: onSignedIn()
+- **事前条件**: 未ログイン（currentUserId が null）・オンライン
+- **入力値・テスト条件**: `start()` の後に `onSignedIn()` を呼ぶ
+- **操作手順**: `autoSync.start(); autoSync.onSignedIn();` を呼び、完了を待つ
+- **期待結果**: リモートへの読み取り・書き込みが呼ばれない
+
+### テストケース4: オフラインでフォルダFを編集し(キューにFの項目が1件)、オンラインに戻った場合、取得の読み取りがすべて終わった後に送信の書き込みが始まる [SYN-T04]
 - **カテゴリ**: 正常系
 - **対象メソッド**: start()
-- **事前条件**: `FakeConnectivityMonitor(online: true)`（`onStatusChanged()` は生成時点の状態を1件だけ流す）
-- **入力値・テスト条件**: `AutoSyncService.start()` を呼び出す
-- **操作手順**: `start()` 実行後、マイクロタスクの完了を待つ
-- **期待結果**: `FakeSyncService.syncLocalToRemoteCallCount` が1になり、渡された `connectivityMonitor` 引数が元の `monitor` インスタンスと一致する
+- **事前条件**: ローカルにpendingのフォルダF(名前B、キュー1件)がある
+- **入力値・テスト条件**: `ConnectivityMonitor.onStatusChanged()` で false → true の順に流す（オフライン→オンライン復帰）
+- **操作手順**: `auto.start()` の後、`monitor.emit(false)` → `monitor.emit(true)` を呼び、`syncService.syncAll()` を await して完了を待つ
+- **期待結果**: リモートへの呼び出しで、取得の読み取り（4種類のfetch）がすべて終わった後に送信の書き込みが始まる（`calls` の先頭4件がfetch、5件目がwrite:folder:F）
 
-### テストケース2: オフライン状態の通知を受けた場合、SyncService.syncLocalToRemoteは呼ばれない
+### テストケース5: オンラインからオフラインに変わった場合、リモートへの読み取り・書き込みが呼ばれない [SYN-T07]
 - **カテゴリ**: 異常系
 - **対象メソッド**: start()
-- **事前条件**: `ControllableConnectivityMonitor` を使用
-- **入力値・テスト条件**: `start()` 後に `monitor.emit(false)` でオフライン通知を送る
-- **操作手順**: `start()` → `emit(false)` → マイクロタスク完了待ち
-- **期待結果**: `syncLocalToRemoteCallCount` は0のまま
+- **事前条件**: オンラインの状態が続いている
+- **入力値・テスト条件**: `ConnectivityMonitor.onStatusChanged()` で true → false の順に流す（オンライン→オフライン）
+- **操作手順**: `auto.start()` の後、`monitor.emit(true)` で一度同期を完了させて呼び出し履歴をクリアし、`monitor.emit(false)` を呼んで少し待つ
+- **期待結果**: オフラインへの変化ではリモートへの読み取り・書き込みが呼ばれない（`fakeRemote.calls` が空）
 
-### テストケース3: オフライン→オンラインと複数回状態が変化した場合、オンラインになった回数分だけsyncLocalToRemoteが呼ばれる
-- **カテゴリ**: 境界値
-- **対象メソッド**: start()
-- **事前条件**: `ControllableConnectivityMonitor` を使用
-- **入力値・テスト条件**: `false → true → false → true` の順に4回状態を発火させる
-- **操作手順**: 各 `emit` の後にマイクロタスクの完了を待ってから次の `emit` を行う
-- **期待結果**: オンラインへの遷移が2回であるため `syncLocalToRemoteCallCount` は2
-
-### テストケース4: startを2回連続で呼んだ場合、古い購読が解除され通知は二重に処理されない
-- **カテゴリ**: 境界値
-- **対象メソッド**: start()
-- **事前条件**: `ControllableConnectivityMonitor` を使用
-- **入力値・テスト条件**: `start()` を連続で2回呼んだ後に `emit(true)` を1回発火させる
-- **操作手順**: `start(); start(); monitor.emit(true);` 実行後マイクロタスク完了待ち
-- **期待結果**: 1回目の `start()` で張られた購読は `_subscription?.cancel()` により解除されているため、`syncLocalToRemoteCallCount` は1（2にならない＝二重購読が発生していない）
-
-### テストケース5: stopを呼んだ後は、オンライン通知が来てもsyncLocalToRemoteは呼ばれない
+### テストケース6: 前回の取得から5分以上たった状態で、リモートのフォルダFがローカルより新しく(名前B)、アプリがバックグラウンドから戻った場合、ローカルのFの名前がBになる [SYN-T08]
 - **カテゴリ**: 正常系
-- **対象メソッド**: stop()
-- **事前条件**: `ControllableConnectivityMonitor` を使用し `start()` 済み
-- **入力値・テスト条件**: `stop()` 実行後に `monitor.emit(true)` を発火させる
-- **操作手順**: `start(); stop(); monitor.emit(true);` 実行後マイクロタスク完了待ち
-- **期待結果**: 購読が解除済みのため `syncLocalToRemoteCallCount` は0のまま
+- **対象メソッド**: onResumed()
+- **事前条件**: ローカルにフォルダF(名前A)があり、リモートのF(名前B)がローカルより新しい。前回の取得時刻の記録(t(0))から10分後（resumedInterval=5分以上）が「今」
+- **入力値・テスト条件**: `start()` の後に `onResumed()` を呼ぶ
+- **操作手順**: `autoSync.start(); autoSync.onResumed();` を呼び、完了を待つ
+- **期待結果**: ローカルのFの名前が「B」になる
 
-### テストケース6: startされていない状態でstopを呼んでも例外は発生しない
-- **カテゴリ**: 境界値
-- **対象メソッド**: stop()
-- **事前条件**: `AutoSyncService` を生成しただけで `start()` は未実行（`_subscription` は初期値 `null`）
-- **入力値・テスト条件**: `stop()` を直接呼ぶ
-- **操作手順**: `stop()` 呼び出しのみ
-- **期待結果**: `null?.cancel()` は無害であり、例外を投げず正常終了する（`returnsNormally`）
+### テストケース7: オンラインで Repository からフォルダFを登録した場合、リモートにFができキューが0件で取得の読み取りは呼ばれない [SYN-T12]
+- **カテゴリ**: 正常系
+- **対象メソッド**: onLocalChanged()
+- **事前条件**: オンライン。`FolderRepositoryImpl` の `onLocalChanged` に `autoSync.onLocalChanged` を渡してある
+- **入力値・テスト条件**: `folderRepo.createFolder(userId: userId, name: 'F')` を呼ぶ
+- **操作手順**: `autoSync.start()` の後、`createFolder` を呼び、完了を待つ
+- **期待結果**: リモートにFがある。キューが0件。リモートへの取得の読み取り（fetch）は呼ばれない
+
+### テストケース8: オフラインで Repository からフォルダFを登録した場合、リモートへの書き込みが呼ばれずキューにFの項目が1件になる [SYN-T13]
+- **カテゴリ**: 異常系
+- **対象メソッド**: onLocalChanged()
+- **事前条件**: オフライン。`FolderRepositoryImpl` の `onLocalChanged` に `autoSync.onLocalChanged` を渡してある
+- **入力値・テスト条件**: `folderRepo.createFolder(userId: userId, name: 'F')` を呼ぶ
+- **操作手順**: `autoSync.start()` の後、`createFolder` を呼び、完了を待つ
+- **期待結果**: リモートへの書き込みが呼ばれない。キューにFの項目が1件になる
 
 ## 対象外
 
-なし。`lib/infrastructure/sync/auto_sync_service.dart` は全32行が上記6ケースの組み合わせで到達可能であり、
-到達不能・防御的コードは存在しない。
+- L37-40：`stop()` はテスト間の後片付け（`tearDown` で呼んでいる）のためだけに使われ、
+  「サブスクリプションを止める」という副作用自体は仕様書 5.3 に対応する振る舞いが無い
+  （きっかけの発生を止めるだけで、分岐や計算を持たない）

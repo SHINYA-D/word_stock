@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:word_stock/core/error/failure.dart';
 import 'package:word_stock/domain/entities/user_settings.dart';
@@ -14,21 +14,66 @@ import 'package:word_stock/infrastructure/repositories/settings_repository_impl.
 
 import '../../helpers/fake_infrastructure.dart';
 
+/// ローカルの読み取りで例外を投げる（STG-R05）。
+class ThrowingFindByUserIdSettingsLocalDataSource
+    extends SettingsLocalDataSource {
+  ThrowingFindByUserIdSettingsLocalDataSource(DatabaseHelper dbHelper)
+      : super(dbHelper);
+
+  @override
+  Future<UserSettings?> findByUserId(String userId) {
+    throw Exception('read failed');
+  }
+}
+
+/// ローカルへの保存で例外を投げる（STG-U04）。
+class ThrowingSaveSettingsLocalDataSource extends SettingsLocalDataSource {
+  ThrowingSaveSettingsLocalDataSource(DatabaseHelper dbHelper)
+      : super(dbHelper);
+
+  @override
+  Future<void> save(
+    DatabaseExecutor db,
+    UserSettings settings, {
+    required String userId,
+    String syncStatus = 'synced',
+  }) {
+    throw Exception('save failed');
+  }
+}
+
+/// キューへの登録で例外を投げる（STG-U05）。
+class ThrowingEnqueueSyncQueueDataSource extends SyncQueueDataSource {
+  ThrowingEnqueueSyncQueueDataSource(DatabaseHelper dbHelper) : super(dbHelper);
+
+  @override
+  Future<void> enqueueInTransaction(
+    DatabaseExecutor txn, {
+    required String operation,
+    required String tableName,
+    required String recordId,
+    required String userId,
+    String? parentId,
+  }) {
+    throw Exception('enqueue failed');
+  }
+}
+
 void main() {
   const userId = 'user-1';
+  const otherUserId = 'user-2';
 
   late DatabaseHelper dbHelper;
   late SettingsLocalDataSource settingsLocal;
   late SyncQueueDataSource syncQueue;
-  late FakeFirestoreDataSource fakeRemote;
-  late FakeConnectivityMonitor fakeConnectivity;
-  late SettingsRepositoryImpl repository;
+  late int onLocalChangedCallCount;
 
   setUpAll(() async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
-    // DatabaseHelper は固定のファイル名を使うため、他のテストファイルと同時実行された際に
-    // 同一パスを取り合ってロック競合が発生しないよう、専用の一時ディレクトリに切り替える。
+    // DatabaseHelper は 'wordstock.db' という固定のファイル名を使うため、
+    // 他のテストファイルと同時実行された際に同一パスを取り合ってロック競合が
+    // 発生しないよう、このテストファイル専用の一時ディレクトリに切り替える。
     final tempDir = await Directory.systemTemp.createTemp(
       'settings_repository_impl_test_',
     );
@@ -36,6 +81,7 @@ void main() {
   });
 
   setUp(() async {
+    // テスト間でDBの中身が混ざらないよう、毎回まっさらなDBファイルを使う。
     dbHelper = DatabaseHelper();
     final db = await dbHelper.database;
     await db.delete(SettingsTable.tableName);
@@ -43,32 +89,73 @@ void main() {
 
     settingsLocal = SettingsLocalDataSource(dbHelper);
     syncQueue = SyncQueueDataSource(dbHelper);
-    fakeRemote = FakeFirestoreDataSource();
-    fakeConnectivity = FakeConnectivityMonitor(online: true);
-
-    repository = SettingsRepositoryImpl(
-      localDataSource: settingsLocal,
-      remoteDataSource: fakeRemote,
-      syncQueueDataSource: syncQueue,
-      dbHelper: dbHelper,
-      connectivityMonitor: fakeConnectivity,
-    );
+    onLocalChangedCallCount = 0;
   });
 
-  Future<List<Map<String, dynamic>>> queueRowsFor(String recordId) async {
-    final db = await dbHelper.database;
-    return db.query(
-      SyncQueueTable.tableName,
-      where: 'table_name = ? AND record_id = ? AND operation = ?',
-      whereArgs: [SettingsTable.tableName, recordId, 'update'],
+  SettingsRepositoryImpl buildRepository({
+    SettingsLocalDataSource? localDataSource,
+    SyncQueueDataSource? syncQueueDataSource,
+  }) {
+    return SettingsRepositoryImpl(
+      localDataSource: localDataSource ?? settingsLocal,
+      syncQueueDataSource: syncQueueDataSource ?? syncQueue,
+      dbHelper: dbHelper,
+      onLocalChanged: () => onLocalChangedCallCount++,
     );
   }
 
+  Future<void> insertSettings(
+    String forUserId, {
+    String colorTheme = 'indigo',
+    bool darkMode = false,
+    required DateTime updatedAt,
+  }) =>
+      settingsLocal.upsert(
+        UserSettings(
+          colorTheme: colorTheme,
+          darkMode: darkMode,
+          updatedAt: updatedAt,
+        ),
+        userId: forUserId,
+      );
+
+  Future<Map<String, dynamic>?> settingsRow(String forUserId) async {
+    final db = await dbHelper.database;
+    final rows = await db.query(
+      SettingsTable.tableName,
+      where: 'userId = ?',
+      whereArgs: [forUserId],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
   group('getSettings', () {
-    test('ローカルに設定が保存されている場合、その設定が返る', () async {
-      await settingsLocal.upsert(
-        const UserSettings(colorTheme: 'red', darkMode: true),
-        userId: userId,
+    test('ローカルにUの設定がない場合、戻り値がRightでカラーテーマ「indigo」・ダークモードfalse [STG-R01]',
+        () async {
+      final repository = buildRepository();
+
+      final result = await repository.getSettings(userId: userId);
+
+      expect(result.isRight(), isTrue);
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (settings) {
+          expect(settings.colorTheme, 'indigo');
+          expect(settings.darkMode, isFalse);
+        },
+      );
+    });
+
+    test(
+        'ローカルにUの設定（カラーテーマ「teal」・ダークモードtrue）がある場合、'
+        '戻り値がRightでカラーテーマ「teal」・ダークモードtrue [STG-R02]', () async {
+      final repository = buildRepository();
+      await insertSettings(
+        userId,
+        colorTheme: 'teal',
+        darkMode: true,
+        updatedAt: DateTime(2024, 1, 1),
       );
 
       final result = await repository.getSettings(userId: userId);
@@ -77,26 +164,55 @@ void main() {
       result.match(
         (_) => fail('Right が返るはず'),
         (settings) {
-          expect(settings.colorTheme, 'red');
+          expect(settings.colorTheme, 'teal');
           expect(settings.darkMode, isTrue);
         },
       );
     });
 
-    test('ローカルに設定が存在しない場合、デフォルトのUserSettingsが返る', () async {
+    test(
+        'ローカルにUの設定がなく、ユーザーVの設定（カラーテーマ「pink」）がある場合、'
+        '戻り値がRightでカラーテーマ「indigo」 [STG-R03]', () async {
+      final repository = buildRepository();
+      await insertSettings(
+        otherUserId,
+        colorTheme: 'pink',
+        updatedAt: DateTime(2024, 1, 1),
+      );
+
       final result = await repository.getSettings(userId: userId);
 
       expect(result.isRight(), isTrue);
       result.match(
         (_) => fail('Right が返るはず'),
-        (settings) => expect(settings, const UserSettings()),
+        (settings) => expect(settings.colorTheme, 'indigo'),
       );
     });
 
-    test('ローカルデータソースが例外を投げた場合、Failure.unknownが返る', () async {
-      // findByUserId 内部で例外を発生させるため、テーブル自体を削除して例外を誘発する。
-      final db = await dbHelper.database;
-      await db.execute('DROP TABLE ${SettingsTable.tableName}');
+    test('オフラインで、ローカルにUの設定（カラーテーマ「teal」）がある場合、戻り値がRightでカラーテーマ「teal」 [STG-R04]',
+        () async {
+      final repository = buildRepository();
+      final fakeConnectivity = FakeConnectivityMonitor(online: false);
+      await fakeConnectivity.isOnline(); // オフライン状態を明示するだけで、結果には影響しない
+      await insertSettings(
+        userId,
+        colorTheme: 'teal',
+        updatedAt: DateTime(2024, 1, 1),
+      );
+
+      final result = await repository.getSettings(userId: userId);
+
+      expect(result.isRight(), isTrue);
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (settings) => expect(settings.colorTheme, 'teal'),
+      );
+    });
+
+    test('ローカルの読み取りが失敗した場合、戻り値がLeft(UnknownFailure) [STG-R05]', () async {
+      final repository = buildRepository(
+        localDataSource: ThrowingFindByUserIdSettingsLocalDataSource(dbHelper),
+      );
 
       final result = await repository.getSettings(userId: userId);
 
@@ -105,110 +221,95 @@ void main() {
         (failure) => expect(failure, isA<UnknownFailure>()),
         (_) => fail('Left が返るはず'),
       );
-
-      // 後続のテストに影響しないようテーブルを復元する。
-      await SettingsTable.onCreate(db);
     });
   });
 
-  group('updateSettings - オンライン時', () {
-    test('設定を更新した場合、ローカル・リモート両方にsynced状態で保存される', () async {
+  group('updateSettings', () {
+    test(
+        'オンラインで、Uの設定（カラーテーマ「indigo」）がある状態で、カラーテーマ「teal」・'
+        'ダークモードtrueに変更した場合、戻り値がRight(unit)。その後のgetSettingsがカラーテーマ「teal」・'
+        'ダークモードtrueで、updatedAtが変更前のupdatedAtより後。キューが1件増える [STG-U01]',
+        () async {
+      final repository = buildRepository();
+      final beforeUpdatedAt = DateTime(2023, 1, 1);
+      await insertSettings(userId, updatedAt: beforeUpdatedAt);
+
       final result = await repository.updateSettings(
         userId: userId,
-        settings: const UserSettings(colorTheme: 'blue', darkMode: true),
+        settings: const UserSettings(colorTheme: 'teal', darkMode: true),
       );
 
       expect(result.isRight(), isTrue);
-
-      final saved = await settingsLocal.findByUserId(userId);
-      expect(saved?.colorTheme, 'blue');
-      expect(saved?.darkMode, isTrue);
-
-      expect(fakeRemote.writtenSettings, hasLength(1));
-      expect(fakeRemote.writtenSettings.single.userId, userId);
-      expect(fakeRemote.writtenSettings.single.settings.colorTheme, 'blue');
-
-      // sync_queue には登録されない。
-      expect(await queueRowsFor(userId), isEmpty);
-    });
-
-    test('updatedAtが指定されていない場合でも、現在時刻が補完されて保存される', () async {
-      final result = await repository.updateSettings(
-        userId: userId,
-        settings: const UserSettings(),
+      final after = await repository.getSettings(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (settings) {
+          expect(settings.colorTheme, 'teal');
+          expect(settings.darkMode, isTrue);
+          expect(settings.updatedAt!.isAfter(beforeUpdatedAt), isTrue);
+        },
       );
-
-      expect(result.isRight(), isTrue);
-      final saved = await settingsLocal.findByUserId(userId);
-      expect(saved?.updatedAt, isNotNull);
-    });
-
-    test('リモート書き込みでFirebaseException(unavailable)が発生した場合、Failure.networkが返る', () async {
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'unavailable',
-      );
-
-      final result = await repository.updateSettings(
-        userId: userId,
-        settings: const UserSettings(colorTheme: 'green'),
-      );
-
-      expect(result.isLeft(), isTrue);
-      result.match(
-        (failure) => expect(failure, const Failure.network()),
-        (_) => fail('Left が返るはず'),
-      );
+      expect(await syncQueue.countByUser(userId), 1);
     });
 
     test(
-        'リモート書き込みでFirebaseException(network-request-failed)が発生した場合、'
-        'Failure.networkが返る', () async {
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'network-request-failed',
-      );
+        'オフラインで、Uの設定（カラーテーマ「indigo」）がある状態で、カラーテーマ「teal」に'
+        '変更した場合、戻り値がRight(unit)。その後のgetSettingsのカラーテーマが「teal」。'
+        'キューが1件増える [STG-U02]', () async {
+      final repository = buildRepository();
+      final fakeConnectivity = FakeConnectivityMonitor(online: false);
+      await fakeConnectivity.isOnline();
+      await insertSettings(userId, updatedAt: DateTime(2023, 1, 1));
 
       final result = await repository.updateSettings(
         userId: userId,
-        settings: const UserSettings(colorTheme: 'green'),
+        settings: const UserSettings(colorTheme: 'teal'),
       );
 
-      expect(result.isLeft(), isTrue);
-      result.match(
-        (failure) => expect(failure, const Failure.network()),
-        (_) => fail('Left が返るはず'),
+      expect(result.isRight(), isTrue);
+      final after = await repository.getSettings(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (settings) => expect(settings.colorTheme, 'teal'),
       );
+      expect(await syncQueue.countByUser(userId), 1);
     });
 
-    test('リモート書き込みで未知のFirebaseExceptionが発生した場合、Failure.unknownが返る', () async {
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'permission-denied',
-        message: '権限がありません',
-      );
+    test(
+        'ローカルにUの設定がない状態で、カラーテーマ「teal」に変更した場合、戻り値がRight(unit)。'
+        'その後のgetSettingsのカラーテーマが「teal」で、updatedAtがnullでない。キューが1件増える [STG-U03]',
+        () async {
+      final repository = buildRepository();
 
       final result = await repository.updateSettings(
         userId: userId,
-        settings: const UserSettings(colorTheme: 'green'),
+        settings: const UserSettings(colorTheme: 'teal'),
       );
 
-      expect(result.isLeft(), isTrue);
-      result.match(
-        (failure) {
-          expect(failure, isA<UnknownFailure>());
-          expect((failure as UnknownFailure).message, '権限がありません');
+      expect(result.isRight(), isTrue);
+      final after = await repository.getSettings(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (settings) {
+          expect(settings.colorTheme, 'teal');
+          expect(settings.updatedAt, isNotNull);
         },
-        (_) => fail('Left が返るはず'),
       );
+      expect(await syncQueue.countByUser(userId), 1);
     });
 
-    test('リモート書き込みで一般的な例外が発生した場合、Failure.unknownが返る', () async {
-      fakeRemote.exceptionToThrow = Exception('boom');
+    test(
+        'Uの設定（カラーテーマ「indigo」）の変更で、ローカルへの保存が失敗した場合、'
+        '戻り値がLeft(UnknownFailure)。その後のgetSettingsのカラーテーマが「indigo」のまま。'
+        'キューの件数が変わらない [STG-U04]', () async {
+      await insertSettings(userId, updatedAt: DateTime(2023, 1, 1));
+      final repository = buildRepository(
+        localDataSource: ThrowingSaveSettingsLocalDataSource(dbHelper),
+      );
 
       final result = await repository.updateSettings(
         userId: userId,
-        settings: const UserSettings(colorTheme: 'green'),
+        settings: const UserSettings(colorTheme: 'teal'),
       );
 
       expect(result.isLeft(), isTrue);
@@ -216,58 +317,92 @@ void main() {
         (failure) => expect(failure, isA<UnknownFailure>()),
         (_) => fail('Left が返るはず'),
       );
-    });
-  });
-
-  group('updateSettings - オフライン時', () {
-    setUp(() {
-      fakeConnectivity.setOnline(false);
+      final after = await settingsLocal.findByUserId(userId);
+      expect(after!.colorTheme, 'indigo');
+      expect(await syncQueue.countByUser(userId), 0);
     });
 
-    test('設定を更新した場合、ローカルにpending状態で保存されsync_queueにupdate登録される', () async {
+    test(
+        'Uの設定（カラーテーマ「indigo」）の変更で、保存は成功しキューへの登録が失敗した場合、'
+        '戻り値がLeft(UnknownFailure)。その後のgetSettingsのカラーテーマが「indigo」のまま [STG-U05]',
+        () async {
+      await insertSettings(userId, updatedAt: DateTime(2023, 1, 1));
+      final repository = buildRepository(
+        syncQueueDataSource: ThrowingEnqueueSyncQueueDataSource(dbHelper),
+      );
+
       final result = await repository.updateSettings(
         userId: userId,
-        settings: const UserSettings(colorTheme: 'purple', darkMode: true),
+        settings: const UserSettings(colorTheme: 'teal'),
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, isA<UnknownFailure>()),
+        (_) => fail('Left が返るはず'),
+      );
+      final after = await repository.getSettings(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (settings) => expect(settings.colorTheme, 'indigo'),
+      );
+    });
+
+    test(
+        'Uの設定（カラーテーマ「indigo」・ダークモードfalse）がある状態で、同じ値で変更した場合、'
+        '戻り値がRight(unit)。updatedAtが変更前のupdatedAtより後。キューが1件増える [STG-U06]',
+        () async {
+      final repository = buildRepository();
+      final beforeUpdatedAt = DateTime(2023, 1, 1);
+      await insertSettings(userId, updatedAt: beforeUpdatedAt);
+
+      final result = await repository.updateSettings(
+        userId: userId,
+        settings: const UserSettings(colorTheme: 'indigo', darkMode: false),
       );
 
       expect(result.isRight(), isTrue);
-
-      final saved = await settingsLocal.findByUserId(userId);
-      expect(saved?.colorTheme, 'purple');
-      expect(saved?.darkMode, isTrue);
-
-      final db = await dbHelper.database;
-      final rows = await db.query(
-        SettingsTable.tableName,
-        where: 'userId = ?',
-        whereArgs: [userId],
+      final after = await repository.getSettings(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (settings) =>
+            expect(settings.updatedAt!.isAfter(beforeUpdatedAt), isTrue),
       );
-      expect(rows.single['syncStatus'], 'pending');
-
-      expect(await queueRowsFor(userId), hasLength(1));
-
-      // オフラインなのでリモートへの書き込みは行われない。
-      expect(fakeRemote.writtenSettings, isEmpty);
+      expect(await syncQueue.countByUser(userId), 1);
     });
 
-    test('同一ユーザーで複数回更新した場合、ローカルの設定行は1件に置き換わる', () async {
+    test('変更した直後（送信前）は、ローカルのUの設定のsyncStatusがpending [STG-U07]', () async {
+      final repository = buildRepository();
+      await insertSettings(userId, updatedAt: DateTime(2023, 1, 1));
+
       await repository.updateSettings(
         userId: userId,
-        settings: const UserSettings(colorTheme: 'purple'),
-      );
-      await repository.updateSettings(
-        userId: userId,
-        settings: const UserSettings(colorTheme: 'yellow'),
+        settings: const UserSettings(colorTheme: 'teal'),
       );
 
-      final db = await dbHelper.database;
-      final rows = await db.query(
-        SettingsTable.tableName,
-        where: 'userId = ?',
-        whereArgs: [userId],
+      final row = await settingsRow(userId);
+      expect(row, isNotNull);
+      expect(row!['syncStatus'], 'pending');
+    });
+
+    test(
+        'Uの設定とユーザーVの設定（カラーテーマ「pink」）がある状態で、Uの設定をカラーテーマ「teal」に'
+        '変更した場合、Vの設定のカラーテーマが「pink」のまま [STG-U08]', () async {
+      final repository = buildRepository();
+      await insertSettings(userId, updatedAt: DateTime(2023, 1, 1));
+      await insertSettings(
+        otherUserId,
+        colorTheme: 'pink',
+        updatedAt: DateTime(2023, 1, 1),
       );
-      expect(rows, hasLength(1));
-      expect(rows.single['colorTheme'], 'yellow');
+
+      await repository.updateSettings(
+        userId: userId,
+        settings: const UserSettings(colorTheme: 'teal'),
+      );
+
+      final row = await settingsRow(otherUserId);
+      expect(row!['colorTheme'], 'pink');
     });
   });
 }

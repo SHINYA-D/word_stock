@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,15 +8,14 @@ import 'package:word_stock/core/di/auth_providers.dart';
 import 'package:word_stock/core/di/sync_status_providers.dart';
 import 'package:word_stock/core/error/failure.dart';
 import 'package:word_stock/domain/entities/app_user.dart';
-import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
-import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_auth_repository.dart';
-import 'package:word_stock/infrastructure/sync/sync_service.dart';
 import 'package:word_stock/presentation/auth/sign_up/sign_up_view_model.dart';
+
+import '../../../helpers/fake_auth_use_case_repositories.dart';
 
 /// [SignUpUseCase] はインターフェースではなく具象クラスのため、テストでは
 /// 実 Firestore/SQLite 通信を避けつつコンストラクタの型要件を満たすために
-/// [MockAuthRepository] と `fake_cloud_firestore` の [FakeFirebaseFirestore] を渡し、
+/// [MockAuthRepository] と [FakeSyncServiceForLogin] を渡し、
 /// 呼び出し対象の `call()` のみをオーバーライドして振る舞いを差し替える。
 ///
 /// `delayCompleter` を渡すと、`call()` は完了を待ってから結果を返す。
@@ -26,12 +24,7 @@ class FakeSignUpUseCase extends SignUpUseCase {
   FakeSignUpUseCase(this.result, {this.delayCompleter})
       : super(
           MockAuthRepository(),
-          SyncService(
-            syncQueueDataSource: SyncQueueDataSource(DatabaseHelper()),
-            firestore: FakeFirebaseFirestore(),
-            getCurrentUserId: () => 'test-user',
-            dbHelper: DatabaseHelper(),
-          ),
+          FakeSyncServiceForLogin(),
         );
 
   final Either<Failure, AppUser> result;

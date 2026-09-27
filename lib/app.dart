@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:word_stock/core/app_lifecycle_observer.dart';
 import 'package:word_stock/core/di/auth_providers.dart';
-import 'package:word_stock/core/di/local_data_source_providers.dart';
 import 'package:word_stock/core/di/sync_providers.dart';
 import 'package:word_stock/core/router/router.dart';
 import 'package:word_stock/core/theme/app_theme.dart';
@@ -21,14 +20,17 @@ class _AppState extends ConsumerState<App> {
   @override
   void initState() {
     super.initState();
-    // AutoSyncService を起動（オンライン復帰時に自動同期）
-    ref.read(autoSyncServiceProvider).start();
+    final autoSync = ref.read(autoSyncServiceProvider);
+    // オンライン復帰時に同期する
+    autoSync.start();
 
-    // AppLifecycleObserver を登録（resumed 時に差分同期）
-    _lifecycleObserver = AppLifecycleObserver(
-      syncService: ref.read(syncServiceProvider),
-      connectivityMonitor: ref.read(connectivityMonitorProvider),
-    );
+    // ログイン済みになったら同期する（起動時にログイン済みだった場合を含む）
+    ref.listenManual(currentUserProvider, (previous, next) {
+      if (next != null && previous?.id != next.id) autoSync.onSignedIn();
+    }, fireImmediately: true);
+
+    // resumed 時に同期する（前回の取得から5分以上たっていれば）
+    _lifecycleObserver = AppLifecycleObserver(onResumed: autoSync.onResumed);
     WidgetsBinding.instance.addObserver(_lifecycleObserver!);
   }
 

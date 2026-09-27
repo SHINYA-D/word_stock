@@ -160,4 +160,189 @@ void main() {
       expect(results.first.updatedAt, DateTime(2024, 6, 1));
     });
   });
+
+  group('日時の保存形式', () {
+    test('insertした場合、DBに保存されるcreatedAt/updatedAtがUTCのISO8601文字列(末尾Z)になる',
+        () async {
+      await dataSource.insert(
+        makeFolder(
+          'folder-1',
+          createdAt: DateTime(2024, 3, 5, 10, 30),
+          updatedAt: DateTime(2024, 3, 6, 11, 45),
+        ),
+        userId: userId,
+      );
+
+      final db = await dbHelper.database;
+      final rows = await db.query(
+        FolderTable.tableName,
+        where: 'id = ?',
+        whereArgs: ['folder-1'],
+      );
+
+      expect(rows.single['createdAt'], endsWith('Z'));
+      expect(rows.single['updatedAt'], endsWith('Z'));
+    });
+
+    test('Zの無いバージョン1形式の文字列が保存されている場合、端末のタイムゾーンの時刻として読み出せる', () async {
+      await dataSource.insert(makeFolder('folder-1'), userId: userId);
+      final db = await dbHelper.database;
+      final legacyLocal = DateTime(2024, 3, 5, 10, 30);
+      // 末尾Zを持たない旧バージョン1形式の文字列を直接書き込む。
+      await db.update(
+        FolderTable.tableName,
+        {'createdAt': legacyLocal.toIso8601String()},
+        where: 'id = ?',
+        whereArgs: ['folder-1'],
+      );
+
+      final found = await dataSource.findById('folder-1');
+
+      expect(found!.createdAt, legacyLocal);
+    });
+  });
+
+  group('findById（削除済みを含む）', () {
+    test('deletedAtが設定されたフォルダを指定した場合、findByIdは削除済みでも取得できる', () async {
+      await dataSource.insert(makeFolder('folder-1'), userId: userId);
+      final db = await dbHelper.database;
+      await dataSource.markDeleted(db, 'folder-1', DateTime(2024, 4, 1));
+
+      final found = await dataSource.findById('folder-1');
+
+      expect(found, isNotNull);
+      expect(found!.id, 'folder-1');
+    });
+  });
+
+  group('findByUserId（削除済みの除外）', () {
+    test('deletedAtが設定されたフォルダが存在する場合、findByUserIdの結果に含まれない', () async {
+      await dataSource.insert(makeFolder('folder-1'), userId: userId);
+      await dataSource.insert(makeFolder('folder-2'), userId: userId);
+      final db = await dbHelper.database;
+      await dataSource.markDeleted(db, 'folder-1', DateTime(2024, 4, 1));
+
+      final results = await dataSource.findByUserId(userId);
+
+      expect(results.map((f) => f.id), ['folder-2']);
+    });
+  });
+
+  group('findActive', () {
+    test('自ユーザーの未削除のフォルダを指定した場合、そのフォルダが取得できる', () async {
+      await dataSource.insert(makeFolder('folder-1'), userId: userId);
+      final db = await dbHelper.database;
+
+      final found =
+          await dataSource.findActive(db, 'folder-1', userId: userId);
+
+      expect(found, isNotNull);
+      expect(found!.id, 'folder-1');
+    });
+
+    test('削除済みのフォルダを指定した場合、findActiveはnullを返す', () async {
+      await dataSource.insert(makeFolder('folder-1'), userId: userId);
+      final db = await dbHelper.database;
+      await dataSource.markDeleted(db, 'folder-1', DateTime(2024, 4, 1));
+
+      final found =
+          await dataSource.findActive(db, 'folder-1', userId: userId);
+
+      expect(found, isNull);
+    });
+
+    test('他ユーザーのフォルダを指定した場合、findActiveはnullを返す', () async {
+      await dataSource.insert(makeFolder('folder-1'), userId: 'other-user');
+      final db = await dbHelper.database;
+
+      final found =
+          await dataSource.findActive(db, 'folder-1', userId: userId);
+
+      expect(found, isNull);
+    });
+  });
+
+  group('findActiveChildIds', () {
+    test('未削除の子フォルダのみが存在する場合、それらのidが取得できる', () async {
+      await dataSource.insert(makeFolder('folder-1'), userId: userId);
+      await dataSource.insert(
+        makeFolder('folder-2', parentFolderId: 'folder-1'),
+        userId: userId,
+      );
+      await dataSource.insert(
+        makeFolder('folder-3', parentFolderId: 'folder-1'),
+        userId: userId,
+      );
+      final db = await dbHelper.database;
+      await dataSource.markDeleted(db, 'folder-3', DateTime(2024, 4, 1));
+
+      final ids =
+          await dataSource.findActiveChildIds(db, 'folder-1', userId: userId);
+
+      expect(ids, ['folder-2']);
+    });
+
+    test('他ユーザーの子フォルダが存在する場合、そのidは含まれない', () async {
+      await dataSource.insert(makeFolder('folder-1'), userId: userId);
+      await dataSource.insert(
+        makeFolder('folder-2', parentFolderId: 'folder-1'),
+        userId: 'other-user',
+      );
+      final db = await dbHelper.database;
+
+      final ids =
+          await dataSource.findActiveChildIds(db, 'folder-1', userId: userId);
+
+      expect(ids, isEmpty);
+    });
+  });
+
+  group('save', () {
+    test('未登録のフォルダをsaveした場合、新規レコードとして挿入される', () async {
+      final db = await dbHelper.database;
+
+      await dataSource.save(db, makeFolder('folder-1'), userId: userId);
+
+      final found = await dataSource.findById('folder-1');
+      expect(found, isNotNull);
+      expect(found!.id, 'folder-1');
+    });
+
+    test('既存IDのフォルダをsaveした場合、レコードが置き換えられる（重複せず1件のまま）', () async {
+      final db = await dbHelper.database;
+      await dataSource.save(db, makeFolder('folder-1', name: '旧名'),
+          userId: userId);
+
+      await dataSource.save(
+        db,
+        makeFolder('folder-1', name: '新名'),
+        userId: userId,
+      );
+
+      final results = await dataSource.findByUserId(userId);
+      expect(results.length, 1);
+      expect(results.first.name, '新名');
+    });
+  });
+
+  group('markDeleted', () {
+    test('存在するフォルダをmarkDeletedした場合、deletedAtとupdatedAtに指定時刻が入りpendingになる',
+        () async {
+      await dataSource.insert(makeFolder('folder-1'), userId: userId);
+      final db = await dbHelper.database;
+      final deletedAt = DateTime(2024, 4, 1, 9, 0);
+
+      await dataSource.markDeleted(db, 'folder-1', deletedAt);
+
+      final rows = await db.query(
+        FolderTable.tableName,
+        where: 'id = ?',
+        whereArgs: ['folder-1'],
+      );
+      final row = rows.single;
+      expect(row['syncStatus'], 'pending');
+      final found = await dataSource.findById('folder-1');
+      expect(found!.updatedAt, deletedAt);
+    });
+  });
 }

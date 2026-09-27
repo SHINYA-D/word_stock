@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:word_stock/domain/entities/user_settings.dart';
 import 'database_helper.dart';
+import 'local_date.dart';
 import 'tables/settings_table.dart';
 
 class SettingsLocalDataSource {
@@ -17,7 +18,7 @@ class SettingsLocalDataSource {
       'userId': userId,
       'colorTheme': settings.colorTheme,
       'darkMode': settings.darkMode ? 1 : 0,
-      'updatedAt': (settings.updatedAt ?? DateTime.now()).toIso8601String(),
+      'updatedAt': toDateColumn(settings.updatedAt ?? DateTime.now()),
       'syncStatus': syncStatus,
     };
   }
@@ -26,7 +27,7 @@ class SettingsLocalDataSource {
     return UserSettings(
       colorTheme: row['colorTheme'] as String,
       darkMode: (row['darkMode'] as int) == 1,
-      updatedAt: DateTime.parse(row['updatedAt'] as String),
+      updatedAt: fromDateColumn(row['updatedAt']),
     );
   }
 
@@ -36,11 +37,7 @@ class SettingsLocalDataSource {
     String syncStatus = 'synced',
   }) async {
     final db = await _dbHelper.database;
-    await db.insert(
-      SettingsTable.tableName,
-      _toRow(settings, userId: userId, syncStatus: syncStatus),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await save(db, settings, userId: userId, syncStatus: syncStatus);
   }
 
   Future<UserSettings?> findByUserId(String userId) async {
@@ -53,5 +50,19 @@ class SettingsLocalDataSource {
     );
     if (rows.isEmpty) return null;
     return _toSettings(rows.first);
+  }
+
+  /// トランザクション内で使う保存（Transaction / Database のどちらも渡せる）。
+  Future<void> save(
+    DatabaseExecutor db,
+    UserSettings settings, {
+    required String userId,
+    String syncStatus = 'synced',
+  }) async {
+    await db.insert(
+      SettingsTable.tableName,
+      _toRow(settings, userId: userId, syncStatus: syncStatus),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 }
