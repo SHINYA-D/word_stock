@@ -55,6 +55,9 @@ Tier1〜3（単体テスト）を全ファイル完了してから、Tier4（Wid
 ④レポートが対象ファイル・テスト・項目書より新しい ⑤仕様書の内容が変わった ID が無い ⑥項目書とテストコードが一致している
 ⑦仕様書が未承認（`draft`）のまま網羅判定が無効になっていない、の7つで、スクリプトが判定する。
 これは「コードもテストも変えずに2回目を実行したとき、成果物が変わらない」ようにするための仕組み。
+①の「カバレッジを見るか」は `harness_report.py` の `is_target()` で決める（画面＝Widget テストの対象は
+カバレッジを見ず、全テスト成功と仕様 ID の網羅で判定する）。この判定が1回目の最後に全対象で通るかは、
+手順11 の `rerun-check` で確かめる。
 
 仕様書が `draft` のときは `can-skip` が必ず「生成が必要」を返す。`draft` だと仕様 ID の網羅も境界値も判定されず、
 行カバレッジだけで合格してしまう（fail-open）ため。この場合はループを進めず、仕様書を承認するかをユーザーに確認する
@@ -231,8 +234,17 @@ Agentツールで起動する。プロンプトには対象ファイルパス1�
 - （仕様書がある対象）引用した仕様 ID の条件と期待される動作をすべて確かめているか、
   期待値をコードの動作に寄せていないか、仕様書にない操作手段を使っていないか
 
-**11. Excel生成**
-`test-doc-excel-generator` エージェントを起動し、`~/Desktop/WordStock_テスト項目書_YYYYMMDD.xlsx` を生成する。
+**11. 2回目の点検 → Excel生成**
+Excel の前に `python3 scripts/loop_state.py rerun-check` を実行する（最後に実行した全体ハーネスの結果で行う）。
+今回 `done` にした全対象について、「テスト・ソース・仕様書を何も変えずにもう一度実行したら、手順2 の
+`can-skip` で生成が飛ばされるか」を判定し、`.test_loop/state.json` の `rerun_check` に記録する。
+「飛ばされない」対象（＝2回目に成果物が変わりうる）と点検の未実施は、Excel の「要確認一覧」に
+**2回目の再生成見込み**（赤字）として載る。「2回目の実行で成果物が変わらない」ことを、2回目を待たずに
+1回目の中で機械的に確かめるための点検で、差し戻し・再生成はしない。
+点検結果は次回に持ち越されない（ステートは手順12で破棄され、2回目はその時点の仕様書とテストで判定し直す）。
+仕様書に項目を足していれば、2回目の `can-skip` はその ID を「テストの無い仕様 ID」として検出し、生成が走る。
+
+続いて `test-doc-excel-generator` エージェントを起動し、`~/Desktop/WordStock_テスト項目書_YYYYMMDD.xlsx` を生成する。
 手順8〜10で問題が残っていても必ず実行する。
 起動プロンプトには今回のループで実際に対象にしたファイル（`done` + `skipped`）を渡す。一部のファイルだけの依頼なら、
 `gen_test_excel.py --only <対象ファイル>` でその対象の項目書だけを Excel に含める。
@@ -259,6 +271,7 @@ Stop フック `scripts/hooks/require_test_loop_completion.py` も同じ `comple
 | テスト漏れ | 赤字 | `harness_report.json` の `coverage.untested_files` |
 | 項目書とテストコードの不一致 | 赤字 | `harness_report.json` の `doc_sync.doc_only` / `test_only` |
 | 仕様のずれ | 赤字 | `harness_report.json` の `spec.drifted` |
+| 2回目の再生成見込み | 赤字 | `.test_loop/state.json` の `rerun_check` で「生成が飛ばされない」対象、または点検が最新のハーネス結果で実行されていない |
 | 90%未満（理由あり） | 黄 | 対象ファイルが90%未満で、`## 対象外` に理由がある |
 | 対象外に行番号なし | 黄 | 上記のうち、理由に行番号が無く未カバー行と照合できない（段階移行中） |
 | 仕様漏れ | 黄 | 仕様書がある対象で、テストの無い仕様 ID・境界値のテスト不足 |
@@ -278,7 +291,7 @@ Stop フック `scripts/hooks/require_test_loop_completion.py` も同じ `comple
 [Tier3] file1(2〜7) → file2(2〜7) → ...
 [Tier4] file1(2〜7) → file2(2〜7) → ...
   ↓ 全ファイル done / skipped
-8. 回帰確認 → 9. 規約レビュー → 10. 独立レビュー（test-fidelity-reviewer）＋自己監査 → 11. Excel生成 → 12. セッション破棄
+8. 回帰確認 → 9. 規約レビュー → 10. 独立レビュー（test-fidelity-reviewer）＋自己監査 → 11. 2回目の点検（rerun-check）→ Excel生成 → 12. セッション破棄
   ↓
 完了報告
 ```
@@ -317,7 +330,7 @@ test-loop 実行中に生成・更新されうるファイルを、発生元ご�
 
 | パス | 生成元 | 内容 |
 |------|--------|------|
-| `.test_loop/state.json` | `scripts/loop_state.py`（メインがコマンド経由で操作） | `{ "session_id", "created_at", "scope": [...], "current", "done": [...], "skipped": {path: reason}, "outer": {path: n}, "inner": {path: n}, "production_bugs": [...], "out_of_scope_writes": [...], "completed_at", "excel_path" }`。ループ回数・進捗管理、見つけたプロダクションコードのバグ・依頼範囲外への書き込みの記録（Excelの要確認一覧に載る）、工程完了の証拠（`completed_at`）。**手で編集しない**（フックが拒否する）。1依頼＝1セッションで、`end-session` かTTL(24h)で破棄される |
+| `.test_loop/state.json` | `scripts/loop_state.py`（メインがコマンド経由で操作） | `{ "session_id", "created_at", "scope": [...], "current", "done": [...], "skipped": {path: reason}, "outer": {path: n}, "inner": {path: n}, "production_bugs": [...], "out_of_scope_writes": [...], "rerun_check": {...}, "completed_at", "excel_path" }`。ループ回数・進捗管理、見つけたプロダクションコードのバグ・依頼範囲外への書き込みの記録（Excelの要確認一覧に載る）、工程完了の証拠（`completed_at`）。**手で編集しない**（フックが拒否する）。1依頼＝1セッションで、`end-session` かTTL(24h)で破棄される |
 | `.test_loop/stop_gate.json` | `scripts/hooks/require_test_loop_completion.py` | Stop フックの押し戻し回数と進捗指紋（無限ループ対策） |
 
 ### ハーネス実行結果（`scripts/test_harness.sh` が生成、`.gitignore` で除外＝`coverage/`）
@@ -371,7 +384,7 @@ scripts/test_harness.sh 実行のたびに coverage/ 配下を上書き:
 | `.claude/skills/widget-test-authoring/SKILL.md` | Widgetテストの作法・雛形 |
 | `.claude/skills/excel-testdoc-authoring/SKILL.md` | 項目書MDのフォーマット規約 |
 | `scripts/test_harness.sh` | テスト実行・カバレッジ計測ハーネス |
-| `scripts/loop_state.py` | 進捗・ループ回数の管理と `compute_verdict()`（継続判定）・`can-skip`・`triage` |
+| `scripts/loop_state.py` | 進捗・ループ回数の管理と `compute_verdict()`（継続判定）・`can-skip`・`rerun-check`（2回目の点検）・`triage` |
 | `scripts/gen_pipeline_svg.py` | 全体図 `docs/images/test_pipeline_overview.svg` の生成元 |
 | `docs/development/hooks.md` | テスト工程に関わるフックの解説 |
 | `.test_loop/state.json` | ループの進捗状態とループ回数（done/skipped/outer/inner） |

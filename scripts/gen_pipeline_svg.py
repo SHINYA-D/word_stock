@@ -186,6 +186,7 @@ def main() -> int:
              "章ごとの振り分けで担当する仕様 ID を決める（3章→Widget / 4章→ViewModel …）",
              "既存テストがあれば先にハーネスを回し、loop_state.py can-skip で判定する",
              "　→「飛ばしてよい」なら手順3〜6を飛ばして手順7へ",
+             "　　（画面はカバレッジを見ず、全テスト成功＋仕様 ID の網羅で判定）",
              "　　（2回目の実行で成果物を変えないため）",
              "仕様書が draft なら can-skip は必ず「生成が必要」→ ループを進めず",
              "　ユーザーに承認するかを確認する（draft だと仕様 ID の網羅が判定されない）"])
@@ -380,8 +381,19 @@ def main() -> int:
              "指摘は該当サブエージェントへ差し戻して修正"])
     arrow(cx, y + h, y + h + 30); y += h + 30
 
+    fy = y
+    h = box(MAIN_X, y, MAIN_W, "script", "手順11-1: 2回目の点検",
+            ["python3 scripts/loop_state.py rerun-check（最後の全体ハーネスの結果で行う）",
+             "done の全対象で「何も変えずに再実行したら can-skip で生成が飛ばされるか」",
+             "飛ばされない対象・点検の未実施 → 要確認一覧「2回目の再生成見込み」（赤字）",
+             "差し戻し・再生成はしない。結果は次回に持ち越さない（2回目は判定し直す）"])
+    fh = box(LEFT_X, fy, LEFT_W, "file", "更新",
+             [".test_loop/state.json（rerun_check）"], mono_lines=True)
+    connect(LEFT_X + LEFT_W, fy + fh / 2, MAIN_X, fy + 25)
+    arrow(cx, y + h, y + h + 30); y += h + 30
+
     hy = y
-    h = box(MAIN_X, y, MAIN_W, "agent", "手順11: 🟩 SUBAGENT: test-doc-excel-generator",
+    h = box(MAIN_X, y, MAIN_W, "agent", "手順11-2: 🟩 SUBAGENT: test-doc-excel-generator",
             ["参照 Skill: 📘 excel-testdoc-authoring",
              "入力: test/test_cases/**/*.md + harness_report.json + .test_loop/state.json",
              "手順8〜10で問題が残っていても必ず実行する"])
@@ -401,8 +413,8 @@ def main() -> int:
               "WordStock_テスト項目書_YYYYMMDD.xlsx",
               "（要確認一覧: 理由なし未達 / バグ /",
               " テスト失敗 / テスト漏れ /",
-              " 項目書との不一致 / 仕様のずれ",
-              " は赤字）",
+              " 項目書との不一致 / 仕様のずれ /",
+              " 2回目の再生成見込み は赤字）",
               "（仕様との対応: 仕様 ID ごとの",
               " テスト件数と OK / NG）"], mono_lines=True)
     connect(LEFT_X + LEFT_W, ey + fh / 2, MAIN_X, ey + 25)
@@ -450,7 +462,7 @@ def main() -> int:
               "拒否する場合 … ・進行中の対象の verdict が continue → reason を次ターンの指示として返す",
               "　　　　　　　  ・verdict が stop なのに finish 未実行 → 手順7 を促す",
               "　　　　　　　  ・scope（未設定なら全対象）に未消化が残っている → 手順2 へ戻す",
-              "　　　　　　　  ・全対象 done だが completed_at 無し → 手順8〜12 を促す",
+              "　　　　　　　  ・全対象 done だが completed_at 無し → 手順8〜12 を促す（手順11 は rerun-check → Excel）",
               "無限ループ対策 … 進捗指紋（current・inner/outer・done/skipped 件数・harness_report.json の mtime）が"
               "3 回連続で変化しなければ解除して制御を返す",
               "　　　　　　　　 セッション通算 60 回でも解除。例外・ステート破損はすべてフェイルオープン（通す）",

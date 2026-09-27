@@ -762,6 +762,7 @@ WARNING_KINDS = [
     ("テスト漏れ", True),
     ("項目書とテストコードの不一致", True),
     ("仕様のずれ", True),
+    ("2回目の再生成見込み", True),
     ("90%未満（理由あり）", False),
     ("対象外に行番号なし", False),
     ("仕様漏れ", False),
@@ -953,6 +954,31 @@ def collect_warnings(files, report, state, scoped: bool):
                 "detail": " ／ ".join(n[:60] for n in ds["test_only"][:8]),
                 "action": "項目書に行を追加する",
             })
+
+    # 2回目の点検（loop_state.py rerun-check）: 何も変えずに再実行したら生成が飛ばされるか
+    if state and state.get("done"):
+        rc = state.get("rerun_check")
+        if not rc or rc.get("report_generated_at") != (report or {}).get("generated_at"):
+            out.append({
+                "kind": "2回目の再生成見込み", "target": "-",
+                "content": "2回目の点検が、最新のハーネス結果で実行されていない",
+                "detail": "未実施" if not rc else
+                          f"点検時のレポート {rc.get('report_generated_at')} ／ "
+                          f"現在のレポート {(report or {}).get('generated_at')}",
+                "action": "全体ハーネスの後に python3 scripts/loop_state.py rerun-check を実行し、"
+                          "Excel を作り直す",
+            })
+        else:
+            for t, res in sorted((rc.get("results") or {}).items()):
+                if res.get("can_skip") or (scoped and _norm(t) not in targets):
+                    continue
+                out.append({
+                    "kind": "2回目の再生成見込み", "target": t,
+                    "content": "テスト・ソース・仕様書を変えずに再実行しても、テスト生成が飛ばされない"
+                               "（2回目の成果物が変わる可能性がある）",
+                    "detail": res.get("reason", ""),
+                    "action": "理由を解消する（判定そのものの誤りならスクリプトを直す）",
+                })
 
     # 依頼範囲の外のテスト関連ファイルを変更している
     for rel in (state or {}).get("out_of_scope_writes") or []:
