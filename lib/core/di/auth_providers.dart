@@ -22,25 +22,28 @@ AppUser? currentUser(Ref ref) => ref.watch(authStateProvider).valueOrNull;
 SignInWithEmailUseCase signInWithEmailUseCase(Ref ref) =>
     SignInWithEmailUseCase(
       ref.watch(authRepositoryProvider),
-      ref.watch(syncServiceProvider),
+      ref.watch(syncRepositoryProvider),
     );
 
 @Riverpod(keepAlive: true)
 SignUpUseCase signUpUseCase(Ref ref) => SignUpUseCase(
       ref.watch(authRepositoryProvider),
-      ref.watch(syncServiceProvider),
+      ref.watch(syncRepositoryProvider),
     );
 
 @Riverpod(keepAlive: true)
 SignInWithGoogleUseCase signInWithGoogleUseCase(Ref ref) =>
     SignInWithGoogleUseCase(
       ref.watch(authRepositoryProvider),
-      ref.watch(syncServiceProvider),
+      ref.watch(syncRepositoryProvider),
     );
 
 @Riverpod(keepAlive: true)
 SignOutUseCase signOutUseCase(Ref ref) =>
-    SignOutUseCase(ref.watch(authRepositoryProvider));
+    SignOutUseCase(
+      ref.watch(authRepositoryProvider),
+      ref.watch(syncRepositoryProvider),
+    );
 
 @Riverpod(keepAlive: true)
 ResetPasswordUseCase resetPasswordUseCase(Ref ref) =>

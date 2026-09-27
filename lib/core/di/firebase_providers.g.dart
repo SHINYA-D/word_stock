@@ -22,9 +22,11 @@ final firebaseAuthProvider = Provider<FirebaseAuth>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef FirebaseAuthRef = ProviderRef<FirebaseAuth>;
-String _$firestoreHash() => r'864285def6284159b44f9598dcde96347e0c1dce';
+String _$firestoreHash() => r'05d3b5fdb13af2444bcafa7fdfd877eed780dc2d';
 
-/// See also [firestore].
+/// オフライン対応は SQLite と同期キューで自前で行うため、Firestore SDK のオフライン機能は使わない
+///
+/// Copied from [firestore].
 @ProviderFor(firestore)
 final firestoreProvider = Provider<FirebaseFirestore>.internal(
   firestore,
@@ -91,5 +93,23 @@ final firestoreDataSourceProvider = Provider<FirestoreDataSource>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef FirestoreDataSourceRef = ProviderRef<FirestoreDataSource>;
+String _$syncRemoteDataSourceHash() =>
+    r'0b83e0322ea8a6d5b0843004ed41ba90b3b04b8e';
+
+/// See also [syncRemoteDataSource].
+@ProviderFor(syncRemoteDataSource)
+final syncRemoteDataSourceProvider = Provider<SyncRemoteDataSource>.internal(
+  syncRemoteDataSource,
+  name: r'syncRemoteDataSourceProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$syncRemoteDataSourceHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef SyncRemoteDataSourceRef = ProviderRef<SyncRemoteDataSource>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

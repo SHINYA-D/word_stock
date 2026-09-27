@@ -1,44 +1,42 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 import 'package:word_stock/core/error/failure.dart';
 import 'package:word_stock/domain/entities/folder.dart';
 import 'package:word_stock/domain/repositories/folder_repository.dart';
-import 'package:word_stock/infrastructure/data_sources/firestore_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
+import 'package:word_stock/infrastructure/data_sources/local/flashcard_result_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/folder_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/folder_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/flashcard_result_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/folder_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/word_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/flashcard_result_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/word_local_data_source.dart';
-import 'package:word_stock/infrastructure/data_sources/network/connectivity_monitor.dart';
+import 'package:word_stock/infrastructure/sync/sync_service.dart';
 
+/// 読み取りはローカルだけから行う。登録・編集・削除は、オンライン・オフラインに関係なく
+/// ローカルへの保存とキューへの登録を同じトランザクションで行い、その後に送信を依頼する。
 class FolderRepositoryImpl implements FolderRepository {
   FolderRepositoryImpl({
     required FolderLocalDataSource localDataSource,
     required WordLocalDataSource wordLocalDataSource,
     required FlashcardResultLocalDataSource flashcardResultLocalDataSource,
-    required FirestoreDataSource remoteDataSource,
     required SyncQueueDataSource syncQueueDataSource,
     required DatabaseHelper dbHelper,
-    required ConnectivityMonitor connectivityMonitor,
+    required void Function() onLocalChanged,
   })  : _local = localDataSource,
         _wordLocal = wordLocalDataSource,
         _flashcardResultLocal = flashcardResultLocalDataSource,
-        _remote = remoteDataSource,
         _syncQueue = syncQueueDataSource,
         _dbHelper = dbHelper,
-        _connectivity = connectivityMonitor;
+        _onLocalChanged = onLocalChanged;
 
   final FolderLocalDataSource _local;
   final WordLocalDataSource _wordLocal;
   final FlashcardResultLocalDataSource _flashcardResultLocal;
-  final FirestoreDataSource _remote;
   final SyncQueueDataSource _syncQueue;
   final DatabaseHelper _dbHelper;
-  final ConnectivityMonitor _connectivity;
+  final void Function() _onLocalChanged;
 
   static const _uuid = Uuid();
 
@@ -71,43 +69,19 @@ class FolderRepositoryImpl implements FolderRepository {
         createdAt: now,
         updatedAt: now,
       );
-      final isOnline = await _connectivity.isOnline();
-
-      if (isOnline) {
-        await _local.insert(folder, userId: userId, syncStatus: 'synced');
-        await _remote.writeFolder(folder, userId);
-      } else {
-        final db = await _dbHelper.database;
-        await db.transaction((txn) async {
-          await txn.insert(
-            FolderTable.tableName,
-            {
-              'id': folder.id,
-              'name': folder.name,
-              'parentFolderId': folder.parentFolderId,
-              'userId': userId,
-              'createdAt': folder.createdAt.toIso8601String(),
-              'updatedAt': folder.updatedAt.toIso8601String(),
-              'syncStatus': 'pending',
-            },
-          );
-          await _syncQueue.enqueueInTransaction(
-            txn,
-            operation: 'create',
-            tableName: FolderTable.tableName,
-            recordId: folder.id,
-            payload: {
-              'name': folder.name,
-              'parentFolderId': folder.parentFolderId,
-              'createdAt': folder.createdAt.toIso8601String(),
-              'updatedAt': folder.updatedAt.toIso8601String(),
-            },
-          );
-        });
-      }
+      final db = await _dbHelper.database;
+      final saved = await db.transaction((txn) async {
+        if (parentFolderId != null &&
+            await _local.findActive(txn, parentFolderId, userId: userId) == null) {
+          return false;
+        }
+        await _local.save(txn, folder, userId: userId, syncStatus: 'pending');
+        await _enqueue(txn, userId, FolderTable.tableName, folder.id);
+        return true;
+      });
+      if (!saved) return const Left(Failure.notFound());
+      _onLocalChanged();
       return Right(folder);
-    } on FirebaseException catch (e) {
-      return Left(_mapException(e));
     } catch (e) {
       return Left(Failure.unknown(e.toString()));
     }
@@ -120,50 +94,18 @@ class FolderRepositoryImpl implements FolderRepository {
     required String name,
   }) async {
     try {
-      final existing = await _local.findById(folderId);
-      final now = DateTime.now();
-      final folder = Folder(
-        id: folderId,
-        name: name,
-        parentFolderId: existing?.parentFolderId,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-      );
-      final isOnline = await _connectivity.isOnline();
-
-      if (isOnline) {
-        await _local.update(folder, userId: userId, syncStatus: 'synced');
-        await _remote.writeFolder(folder, userId);
-      } else {
-        final db = await _dbHelper.database;
-        await db.transaction((txn) async {
-          await txn.update(
-            FolderTable.tableName,
-            {
-              'name': folder.name,
-              'updatedAt': folder.updatedAt.toIso8601String(),
-              'syncStatus': 'pending',
-            },
-            where: 'id = ?',
-            whereArgs: [folderId],
-          );
-          await _syncQueue.enqueueInTransaction(
-            txn,
-            operation: 'update',
-            tableName: FolderTable.tableName,
-            recordId: folder.id,
-            payload: {
-              'name': folder.name,
-              'parentFolderId': folder.parentFolderId,
-              'createdAt': folder.createdAt.toIso8601String(),
-              'updatedAt': folder.updatedAt.toIso8601String(),
-            },
-          );
-        });
-      }
-      return Right(folder);
-    } on FirebaseException catch (e) {
-      return Left(_mapException(e));
+      final db = await _dbHelper.database;
+      final updated = await db.transaction((txn) async {
+        final existing = await _local.findActive(txn, folderId, userId: userId);
+        if (existing == null) return null;
+        final folder = existing.copyWith(name: name, updatedAt: DateTime.now());
+        await _local.save(txn, folder, userId: userId, syncStatus: 'pending');
+        await _enqueue(txn, userId, FolderTable.tableName, folderId);
+        return folder;
+      });
+      if (updated == null) return const Left(Failure.notFound());
+      _onLocalChanged();
+      return Right(updated);
     } catch (e) {
       return Left(Failure.unknown(e.toString()));
     }
@@ -175,109 +117,69 @@ class FolderRepositoryImpl implements FolderRepository {
     required String folderId,
   }) async {
     try {
-      // 配下のサブフォルダ・単語・成績データも含めてカスケード削除する
-      final folderIds = await _collectFolderIdsRecursively(userId, folderId);
-      final isOnline = await _connectivity.isOnline();
-
-      if (isOnline) {
-        for (final id in folderIds) {
-          final words = await _wordLocal.findByFolderId(id, userId: userId);
-          for (final word in words) {
-            await _wordLocal.delete(word.id);
-            await _remote.deleteRemoteWord(userId, id, word.id);
-          }
-          final results =
-              await _flashcardResultLocal.findByUserId(userId, folderId: id);
-          for (final result in results) {
-            await _flashcardResultLocal.delete(result.id);
-            await _remote.deleteRemoteFlashcardResult(userId, result.id);
-          }
-          await _local.delete(id);
-          await _remote.deleteRemoteFolder(userId, id);
+      final db = await _dbHelper.database;
+      final deleted = await db.transaction((txn) async {
+        if (await _local.findActive(txn, folderId, userId: userId) == null) {
+          return false;
         }
-      } else {
-        // トランザクション内では同一DB接続の別クエリを実行できない(sqfliteがロックされデッドロックする)ため、
-        // 削除対象のID収集はトランザクション開始前に完了させる
-        final wordsByFolder = <String, List<String>>{};
-        final resultIdsByFolder = <String, List<String>>{};
-        for (final id in folderIds) {
-          final words = await _wordLocal.findByFolderId(id, userId: userId);
-          wordsByFolder[id] = words.map((w) => w.id).toList();
-          final results =
-              await _flashcardResultLocal.findByUserId(userId, folderId: id);
-          resultIdsByFolder[id] = results.map((r) => r.id).toList();
-        }
-
-        final db = await _dbHelper.database;
-        await db.transaction((txn) async {
-          for (final id in folderIds) {
-            for (final wordId in wordsByFolder[id]!) {
-              await txn.delete(
-                WordTable.tableName,
-                where: 'id = ?',
-                whereArgs: [wordId],
-              );
-              await _syncQueue.enqueueInTransaction(
-                txn,
-                operation: 'delete',
-                tableName: WordTable.tableName,
-                recordId: wordId,
-                parentId: id,
-              );
-            }
-            for (final resultId in resultIdsByFolder[id]!) {
-              await txn.delete(
-                FlashcardResultTable.tableName,
-                where: 'id = ?',
-                whereArgs: [resultId],
-              );
-              await _syncQueue.enqueueInTransaction(
-                txn,
-                operation: 'delete',
-                tableName: FlashcardResultTable.tableName,
-                recordId: resultId,
-              );
-            }
-            await txn.delete(
-              FolderTable.tableName,
-              where: 'id = ?',
-              whereArgs: [id],
-            );
-            await _syncQueue.enqueueInTransaction(
-              txn,
-              operation: 'delete',
-              tableName: FolderTable.tableName,
-              recordId: id,
-            );
+        // 配下のサブフォルダ・単語・成績も、同じ時刻で論理削除する（カスケード削除）
+        final now = DateTime.now();
+        for (final id in await _collectFolderIds(txn, userId, folderId)) {
+          for (final wordId
+              in await _wordLocal.findActiveIdsByFolder(txn, id, userId: userId)) {
+            await _wordLocal.markDeleted(txn, wordId, now);
+            await _enqueue(txn, userId, WordTable.tableName, wordId,
+                isDelete: true, parentId: id);
           }
-        });
-      }
+          for (final resultId in await _flashcardResultLocal
+              .findActiveIdsByFolder(txn, id, userId: userId)) {
+            await _flashcardResultLocal.markDeleted(txn, resultId, now);
+            await _enqueue(txn, userId, FlashcardResultTable.tableName, resultId,
+                isDelete: true);
+          }
+          await _local.markDeleted(txn, id, now);
+          await _enqueue(txn, userId, FolderTable.tableName, id, isDelete: true);
+        }
+        return true;
+      });
+      if (!deleted) return const Left(Failure.notFound());
+      _onLocalChanged();
       return const Right(unit);
-    } on FirebaseException catch (e) {
-      return Left(_mapException(e));
     } catch (e) {
       return Left(Failure.unknown(e.toString()));
     }
   }
 
-  /// 指定フォルダとその配下のサブフォルダIDを再帰的に収集する
-  Future<List<String>> _collectFolderIdsRecursively(
+  /// 指定フォルダとその配下の未削除のサブフォルダ id（深い方が先）
+  Future<List<String>> _collectFolderIds(
+    DatabaseExecutor txn,
     String userId,
     String rootFolderId,
   ) async {
-    final ids = <String>[rootFolderId];
-    final children =
-        await _local.findByUserId(userId, parentFolderId: rootFolderId);
-    for (final child in children) {
-      ids.addAll(await _collectFolderIdsRecursively(userId, child.id));
+    final ids = <String>[];
+    for (final child
+        in await _local.findActiveChildIds(txn, rootFolderId, userId: userId)) {
+      ids.addAll(await _collectFolderIds(txn, userId, child));
     }
+    ids.add(rootFolderId);
     return ids;
   }
 
-  Failure _mapException(FirebaseException e) {
-    if (e.code == 'unavailable' || e.code == 'network-request-failed') {
-      return const Failure.network();
-    }
-    return Failure.unknown(e.message ?? e.code);
+  Future<void> _enqueue(
+    DatabaseExecutor txn,
+    String userId,
+    String tableName,
+    String recordId, {
+    bool isDelete = false,
+    String? parentId,
+  }) {
+    return _syncQueue.enqueueInTransaction(
+      txn,
+      operation: SyncService.operationFor(isDelete: isDelete),
+      tableName: tableName,
+      recordId: recordId,
+      parentId: parentId,
+      userId: userId,
+    );
   }
 }

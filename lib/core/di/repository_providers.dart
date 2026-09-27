@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:word_stock/core/di/firebase_providers.dart';
 import 'package:word_stock/core/di/local_data_source_providers.dart';
+import 'package:word_stock/core/di/sync_providers.dart';
 import 'package:word_stock/domain/repositories/auth_repository.dart';
 import 'package:word_stock/domain/repositories/folder_repository.dart';
 import 'package:word_stock/domain/repositories/sample_repository.dart';
@@ -27,6 +28,10 @@ part 'repository_providers.g.dart';
 // ---------------------------------------------------------------
 const kUseMocks = bool.fromEnvironment('USE_MOCKS', defaultValue: false);
 
+/// 登録・編集・削除の後に送信を依頼する
+void Function() _onLocalChanged(Ref ref) =>
+    () => ref.read(autoSyncServiceProvider).onLocalChanged();
+
 @Riverpod(keepAlive: true)
 AuthRepository authRepository(Ref ref) {
   if (kUseMocks) return MockAuthRepository();
@@ -40,10 +45,9 @@ FolderRepository folderRepository(Ref ref) {
     localDataSource: ref.watch(folderLocalDataSourceProvider),
     wordLocalDataSource: ref.watch(wordLocalDataSourceProvider),
     flashcardResultLocalDataSource: ref.watch(flashcardResultLocalDataSourceProvider),
-    remoteDataSource: ref.watch(firestoreDataSourceProvider),
     syncQueueDataSource: ref.watch(syncQueueDataSourceProvider),
     dbHelper: ref.watch(databaseHelperProvider),
-    connectivityMonitor: ref.watch(connectivityMonitorProvider),
+    onLocalChanged: _onLocalChanged(ref),
   );
 }
 
@@ -52,10 +56,10 @@ WordRepository wordRepository(Ref ref) {
   if (kUseMocks) return MockWordRepository();
   return WordRepositoryImpl(
     localDataSource: ref.watch(wordLocalDataSourceProvider),
-    remoteDataSource: ref.watch(firestoreDataSourceProvider),
+    folderLocalDataSource: ref.watch(folderLocalDataSourceProvider),
     syncQueueDataSource: ref.watch(syncQueueDataSourceProvider),
     dbHelper: ref.watch(databaseHelperProvider),
-    connectivityMonitor: ref.watch(connectivityMonitorProvider),
+    onLocalChanged: _onLocalChanged(ref),
   );
 }
 
@@ -64,10 +68,10 @@ FlashcardResultRepository flashcardResultRepository(Ref ref) {
   if (kUseMocks) return MockFlashcardResultRepository();
   return FlashcardResultRepositoryImpl(
     localDataSource: ref.watch(flashcardResultLocalDataSourceProvider),
-    remoteDataSource: ref.watch(firestoreDataSourceProvider),
+    folderLocalDataSource: ref.watch(folderLocalDataSourceProvider),
     syncQueueDataSource: ref.watch(syncQueueDataSourceProvider),
     dbHelper: ref.watch(databaseHelperProvider),
-    connectivityMonitor: ref.watch(connectivityMonitorProvider),
+    onLocalChanged: _onLocalChanged(ref),
   );
 }
 
@@ -76,10 +80,9 @@ SettingsRepository settingsRepository(Ref ref) {
   if (kUseMocks) return MockSettingsRepository();
   return SettingsRepositoryImpl(
     localDataSource: ref.watch(settingsLocalDataSourceProvider),
-    remoteDataSource: ref.watch(firestoreDataSourceProvider),
     syncQueueDataSource: ref.watch(syncQueueDataSourceProvider),
     dbHelper: ref.watch(databaseHelperProvider),
-    connectivityMonitor: ref.watch(connectivityMonitorProvider),
+    onLocalChanged: _onLocalChanged(ref),
   );
 }
 

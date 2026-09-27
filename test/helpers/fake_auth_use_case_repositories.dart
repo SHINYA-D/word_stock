@@ -1,11 +1,8 @@
-import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:word_stock/core/error/failure.dart';
 import 'package:word_stock/domain/entities/app_user.dart';
 import 'package:word_stock/domain/repositories/auth_repository.dart';
-import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
-import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
-import 'package:word_stock/infrastructure/sync/sync_service.dart';
+import 'package:word_stock/domain/repositories/sync_repository.dart';
 
 /// `lib/application/use_cases/auth/**` のテストで共有する手書き Fake 群。
 ///
@@ -77,22 +74,15 @@ class FakeAuthRepository implements AuthRepository {
   }
 }
 
-/// [SyncService.syncRemoteToLocalOnLogin] の呼び出しを記録・制御するためのフェイク。
+/// [SyncRepository] の呼び出しを記録・制御するためのフェイク。
 ///
-/// `SyncService` はインターフェースではなく具象クラスのため、
-/// `test/infrastructure/sync/auto_sync_service_test.dart` の `FakeSyncService` と同様に
-/// 実 Firestore/SQLite 通信を避けつつコンストラクタの型要件を満たし、
-/// 対象メソッドのみをオーバーライドする。
-class FakeSyncServiceForLogin extends SyncService {
-  FakeSyncServiceForLogin()
-      : super(
-          syncQueueDataSource: SyncQueueDataSource(DatabaseHelper()),
-          firestore: FakeFirebaseFirestore(),
-          getCurrentUserId: () => 'test-user',
-          dbHelper: DatabaseHelper(),
-        );
-
+/// 実 Firestore/SQLite 通信を行わず、呼ばれた回数だけを記録する。
+class FakeSyncServiceForLogin implements SyncRepository {
   int syncRemoteToLocalOnLoginCallCount = 0;
+  int pushBeforeSignOutCallCount = 0;
+
+  /// [pushBeforeSignOut] が返す未送信の件数。
+  int pendingCountAfterPush = 0;
 
   /// 設定すると次回呼び出し時にこの例外を投げる。
   Object? exceptionToThrow;
@@ -102,5 +92,11 @@ class FakeSyncServiceForLogin extends SyncService {
     syncRemoteToLocalOnLoginCallCount++;
     final e = exceptionToThrow;
     if (e != null) throw e;
+  }
+
+  @override
+  Future<int> pushBeforeSignOut() async {
+    pushBeforeSignOutCallCount++;
+    return pendingCountAfterPush;
   }
 }

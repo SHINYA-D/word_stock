@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:word_stock/core/di/auth_providers.dart';
 import 'package:word_stock/core/di/repository_providers.dart';
+import 'package:word_stock/core/di/sync_providers.dart';
 import 'package:word_stock/domain/entities/app_user.dart';
 import 'package:word_stock/domain/entities/folder.dart';
 import 'package:word_stock/domain/entities/word.dart';
@@ -10,6 +11,7 @@ import 'package:word_stock/infrastructure/repositories/mock/mock_folder_reposito
 import 'package:word_stock/infrastructure/repositories/mock/mock_settings_repository.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_flashcard_result_repository.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_word_repository.dart';
+import 'package:word_stock/infrastructure/repositories/mock/mock_sync_repository.dart';
 
 /// テスト用モックユーザー（MockFolderRepository / MockWordRepository のサンプルデータと同じ ID）
 const testUser = AppUser(id: 'mock-user-id', email: 'dev@example.com');
@@ -40,6 +42,7 @@ Widget buildWithMockRepositories({
       wordRepositoryProvider.overrideWithValue(MockWordRepository()),
       settingsRepositoryProvider.overrideWithValue(MockSettingsRepository()),
       flashcardResultRepositoryProvider.overrideWithValue(MockFlashcardResultRepository()),
+      syncRepositoryProvider.overrideWithValue(MockSyncRepository()),
       currentUserProvider.overrideWithValue(testUser),
       ...extra,
     ],

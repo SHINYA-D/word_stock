@@ -6,7 +6,7 @@ part of 'sync_providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$syncServiceHash() => r'02342d8260c409d4f0cbb00d2888649e8c67e0f3';
+String _$syncServiceHash() => r'8552d6b589eb0fb1f9756afdb66a3dee46c414d1';
 
 /// See also [syncService].
 @ProviderFor(syncService)
@@ -22,6 +22,23 @@ final syncServiceProvider = Provider<SyncService>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef SyncServiceRef = ProviderRef<SyncService>;
+String _$syncRepositoryHash() => r'21d1fb9e5177b8939e56e079e9f6aa6ac002572d';
+
+/// See also [syncRepository].
+@ProviderFor(syncRepository)
+final syncRepositoryProvider = Provider<SyncRepository>.internal(
+  syncRepository,
+  name: r'syncRepositoryProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$syncRepositoryHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef SyncRepositoryRef = ProviderRef<SyncRepository>;
 String _$autoSyncServiceHash() => r'33ea95fd36e5920e55e4bf8b07758dc5f695272c';
 
 /// See also [autoSyncService].

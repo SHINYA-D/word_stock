@@ -1,472 +1,312 @@
-import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:word_stock/core/firebase/firestore_path.dart';
-import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
+import 'package:word_stock/domain/repositories/sync_repository.dart';
+import 'package:word_stock/infrastructure/data_sources/local/sync_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/folder_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/settings_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/sync_meta_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/flashcard_result_table.dart';
-import 'package:word_stock/infrastructure/data_sources/local/tables/word_table.dart';
 import 'package:word_stock/infrastructure/data_sources/network/connectivity_monitor.dart';
+import 'package:word_stock/infrastructure/data_sources/remote/sync_remote_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/sync_record.dart';
 
-class SyncService {
+/// ローカル（SQLite）とリモートの同期。
+///
+/// - 取得：前回の取得以降にリモートが受け付けた変更をローカルに反映する
+/// - 送信：キューを積んだ順に 1 件ずつリモートに反映する（ローカルの最新の行を送る）
+/// - 同じデータの変更がぶつかったら、updatedAt が新しい方を正とする（同じならリモート）
+/// - 取得・送信は同時に 1 つだけ動かす。失敗は例外にせず、次のきっかけで再試行する
+class SyncService implements SyncRepository {
   SyncService({
+    required SyncLocalDataSource localDataSource,
     required SyncQueueDataSource syncQueueDataSource,
-    required FirebaseFirestore firestore,
-    required String? Function() getCurrentUserId,
-    required DatabaseHelper dbHelper,
-  })  : _syncQueueDataSource = syncQueueDataSource,
-        _firestore = firestore,
-        _getCurrentUserId = getCurrentUserId,
-        _dbHelper = dbHelper;
-
-  final SyncQueueDataSource _syncQueueDataSource;
-  final FirebaseFirestore _firestore;
-  final String? Function() _getCurrentUserId;
-  final DatabaseHelper _dbHelper;
-
-  static const Duration _syncInterval = Duration(minutes: 5);
-
-  // ----------------------------------------------------------------
-  // ローカル → リモート 同期
-  // ----------------------------------------------------------------
-
-  /// オフライン時に積まれたキューを Firestore に反映する。
-  /// ネットワーク確認 → 古い順に 1 件ずつ処理 → 失敗したら中断。
-  Future<void> syncLocalToRemote({
+    required SyncRemoteDataSource remoteDataSource,
     required ConnectivityMonitor connectivityMonitor,
-  }) async {
-    if (!await connectivityMonitor.isOnline()) return;
+    required String? Function() getCurrentUserId,
+    DateTime Function()? clock,
+  })  : _local = localDataSource,
+        _queue = syncQueueDataSource,
+        _remote = remoteDataSource,
+        _connectivity = connectivityMonitor,
+        _getCurrentUserId = getCurrentUserId,
+        _now = clock ?? DateTime.now;
 
-    final userId = _getCurrentUserId();
-    if (userId == null) return;
-    final queueItems = await _syncQueueDataSource.getAll();
+  final SyncLocalDataSource _local;
+  final SyncQueueDataSource _queue;
+  final SyncRemoteDataSource _remote;
+  final ConnectivityMonitor _connectivity;
+  final String? Function() _getCurrentUserId;
+  final DateTime Function() _now;
 
-    for (final item in queueItems) {
-      try {
-        await _processQueueItem(item, userId);
-        await _syncQueueDataSource.delete(item['id'] as int);
-      } catch (e, stack) {
-        // 失敗した時点で中断。次回同期でキュー先頭から再開する。
-        debugPrint('Sync failed: $e\n$stack');
-        break;
-      }
-    }
-  }
+  /// resumed 時に取得するまでの間隔
+  static const Duration resumedInterval = Duration(minutes: 5);
 
-  Future<void> _processQueueItem(
-    Map<String, dynamic> item,
-    String userId,
-  ) async {
-    final tableName = item['table_name'] as String;
-    final recordId = item['record_id'] as String;
-    final parentId = item['parent_id'] as String?;
-    final operation = item['operation'] as String;
-    final payloadStr = item['payload'] as String?;
+  /// リモートとの通信 1 回あたりの時間の上限
+  static const Duration remoteTimeout = Duration(seconds: 30);
 
-    final path = _buildPath(tableName, userId, recordId, parentId);
+  /// 差分取得の範囲を、記録した基準より少し前から取る幅。
+  /// 取得の途中（別のコレクションを読んでいる間）に受け付けられた変更を取りこぼさないため。
+  /// 同じデータを2回反映しても結果は変わらない。
+  static const Duration _pullOverlap = Duration(minutes: 10);
 
-    if (operation == 'delete') {
-      await _firestore.doc(path).delete();
-    } else {
-      final decoded =
-          jsonDecode(payloadStr!) as Map<String, dynamic>;
-      final firestoreData = _convertToFirestoreData(decoded);
+  static const _operationUpsert = 'upsert';
+  static const _operationDelete = 'delete';
 
-      // Firestoreトランザクションで競合解決（Phase 8 の要件も満たす）
-      await _firestore.runTransaction((transaction) async {
-        final docRef = _firestore.doc(path);
-        final docSnapshot = await transaction.get(docRef);
+  static String _cursorKey(String userId) => 'pullCursor:$userId';
+  static String _lastPulledKey(String userId) => 'lastPulledAt:$userId';
 
-        if (docSnapshot.exists) {
-          final remoteData = docSnapshot.data()!;
-          final remoteUpdatedAtRaw = remoteData['updatedAt'];
-          if (remoteUpdatedAtRaw is Timestamp) {
-            final remoteUpdatedAt = remoteUpdatedAtRaw.toDate();
-            final localUpdatedAtStr = decoded['updatedAt'] as String?;
-            if (localUpdatedAtStr != null) {
-              final localUpdatedAt = DateTime.parse(localUpdatedAtStr);
-              if (remoteUpdatedAt.isAfter(localUpdatedAt)) {
-                return; // リモートが新しいのでスキップ
-              }
-            }
-          }
-        }
-        transaction.set(docRef, firestoreData);
+  // ---------------------------------------------------------------
+  // 同期のきっかけ（公開 API）
+  // ---------------------------------------------------------------
+
+  /// 同期処理（取得 → 送信）。取得に失敗したら送信しない。
+  Future<void> syncAll() => _schedule(_Job.full, () async {
+        final userId = await _readyUserId();
+        if (userId == null) return;
+        if (!await _guard('pull', () => _pull(userId))) return;
+        await _guard('push', () => _push(userId));
       });
-    }
+
+  /// 送信だけ（登録・編集・削除の直後）。
+  Future<void> pushPending() => _schedule(_Job.push, () async {
+        final userId = await _readyUserId();
+        if (userId == null) return;
+        await _guard('push', () => _push(userId));
+      });
+
+  /// resumed 時。前回の取得から [resumedInterval] 以上たっていれば同期処理をする。
+  Future<void> syncOnResumed() async {
+    final userId = _getCurrentUserId();
+    if (userId == null || !await _connectivity.isOnline()) return;
+    final last = await _local.readMetaDate(_lastPulledKey(userId));
+    if (last != null && _now().difference(last) < resumedInterval) return;
+    await syncAll();
   }
 
-  /// JSON payload 内の ISO8601 文字列を DateTime に変換して Firestore 形式に整える。
-  Map<String, dynamic> _convertToFirestoreData(Map<String, dynamic> decoded) {
-    final result = <String, dynamic>{};
-    for (final entry in decoded.entries) {
-      final value = entry.value;
-      if (value is String && _isIso8601(value)) {
-        result[entry.key] = DateTime.parse(value);
-      } else {
-        result[entry.key] = value;
-      }
-    }
-    return result;
+  @override
+  Future<void> syncRemoteToLocalOnLogin() => syncAll();
+
+  @override
+  Future<int> pushBeforeSignOut() async {
+    final userId = _getCurrentUserId();
+    if (userId == null) return 0;
+    await pushPending();
+    return _queue.countByUser(userId);
   }
 
-  bool _isIso8601(String value) {
+  // ---------------------------------------------------------------
+  // 実行の直列化
+  // ---------------------------------------------------------------
+
+  Future<void> _tail = Future.value();
+  final Map<_Job, Future<void>> _waiting = {};
+
+  /// 取得・送信を 1 つずつ順番に動かす。同じ種類の処理がまだ始まらずに待っていれば、それにまとめる。
+  Future<void> _schedule(_Job job, Future<void> Function() body) {
+    final waiting = _waiting[job];
+    if (waiting != null) return waiting;
+    final run = _tail.then((_) {
+      _waiting.remove(job);
+      return body();
+    });
+    _waiting[job] = run;
+    _tail = run.catchError((Object _) {});
+    return run;
+  }
+
+  Future<String?> _readyUserId() async {
+    final userId = _getCurrentUserId();
+    if (userId == null) return null;
+    if (!await _connectivity.isOnline()) return null;
+    return userId;
+  }
+
+  /// 同期の失敗は画面に出さず、ログに残して false を返す。
+  Future<bool> _guard(String label, Future<void> Function() body) async {
     try {
-      DateTime.parse(value);
-      return value.contains('T') || value.contains('-');
-    } catch (_) {
+      await body();
+      return true;
+    } catch (e, stack) {
+      debugPrint('Sync $label failed: $e\n$stack');
       return false;
     }
   }
 
-  String _buildPath(
-    String tableName,
-    String userId,
-    String recordId,
-    String? parentId,
-  ) {
-    switch (tableName) {
-      case FolderTable.tableName:
-        return FirestorePath.folder(userId, recordId);
-      case WordTable.tableName:
-        if (parentId == null) {
-          throw Exception('parentId is required for words');
-        }
-        return FirestorePath.word(userId, parentId, recordId);
-      case FlashcardResultTable.tableName:
-        return FirestorePath.flashcardResult(userId, recordId);
-      case SettingsTable.tableName:
-        return FirestorePath.settings(userId);
-      default:
-        throw Exception('Unknown table_name: $tableName');
-    }
-  }
+  Future<T> _remoteCall<T>(Future<T> call) => call.timeout(remoteTimeout);
 
-  // ----------------------------------------------------------------
-  // リモート → ローカル 同期（ログイン時・全件）
-  // ----------------------------------------------------------------
+  // ---------------------------------------------------------------
+  // 取得（リモート → ローカル）
+  // ---------------------------------------------------------------
 
-  Future<void> syncRemoteToLocalOnLogin() async {
-    final userId = _getCurrentUserId();
-    if (userId == null) return;
-    final db = await _dbHelper.database;
+  Future<void> _pull(String userId) async {
+    final cursor = await _local.readMetaDate(_cursorKey(userId));
+    final since = cursor?.subtract(_pullOverlap);
+    var newest = cursor;
 
-    // folders
-    final foldersSnapshot = await _firestore
-        .collection(FirestorePath.folders(userId))
-        .get();
-
-    await db.transaction((txn) async {
-      for (final doc in foldersSnapshot.docs) {
-        await _upsertFolderWithConflictCheck(txn, doc, userId);
-      }
-    });
-
-    // 各フォルダの words
-    for (final folderDoc in foldersSnapshot.docs) {
-      final wordsSnapshot = await _firestore
-          .collection(FirestorePath.words(userId, folderDoc.id))
-          .get();
-
+    // フォルダを先に反映し、単語・成績を反映するときに親フォルダの削除を判定できるようにする
+    for (final entity in SyncEntity.values) {
+      final records = await _remoteCall(
+          _remote.fetchChanges(userId, entity, since: since));
+      final db = await _local.database;
       await db.transaction((txn) async {
-        for (final wordDoc in wordsSnapshot.docs) {
-          await _upsertWordWithConflictCheck(
-              txn, wordDoc, userId, folderDoc.id);
+        for (final record in records) {
+          await _applyRemote(txn, userId, record);
         }
       });
-    }
-
-    // flashcard_results
-    final resultsSnapshot = await _firestore
-        .collection(FirestorePath.flashcardResults(userId))
-        .get();
-
-    await db.transaction((txn) async {
-      for (final doc in resultsSnapshot.docs) {
-        await _upsertFlashcardResultWithConflictCheck(txn, doc, userId);
-      }
-    });
-
-    // settings
-    final settingsDoc =
-        await _firestore.doc(FirestorePath.settings(userId)).get();
-    if (settingsDoc.exists) {
-      await db.transaction((txn) async {
-        await _upsertSettingsWithConflictCheck(txn, settingsDoc, userId);
-      });
-    }
-
-    await _updateLastSyncedAt(_dbHelper);
-  }
-
-  // ----------------------------------------------------------------
-  // リモート → ローカル 同期（resumed 時・差分）
-  // ----------------------------------------------------------------
-
-  Future<void> syncRemoteToLocalOnResumed({
-    required ConnectivityMonitor connectivityMonitor,
-  }) async {
-    if (!await connectivityMonitor.isOnline()) return;
-
-    final lastSyncedAt = await _getLastSyncedAt(_dbHelper);
-    if (lastSyncedAt != null) {
-      final elapsed = DateTime.now().difference(lastSyncedAt);
-      if (elapsed < _syncInterval) return;
-    }
-
-    final userId = _getCurrentUserId();
-    if (userId == null) return;
-    final lastSyncedAtForQuery = lastSyncedAt ?? DateTime(1970);
-    final db = await _dbHelper.database;
-
-    // folders 差分
-    final foldersSnapshot = await _firestore
-        .collection(FirestorePath.folders(userId))
-        .where('updatedAt', isGreaterThan: lastSyncedAtForQuery)
-        .get();
-
-    await db.transaction((txn) async {
-      for (final doc in foldersSnapshot.docs) {
-        await _upsertFolderWithConflictCheck(txn, doc, userId);
-      }
-    });
-
-    // 全フォルダの words 差分
-    final allFoldersSnapshot = await _firestore
-        .collection(FirestorePath.folders(userId))
-        .get();
-
-    for (final folderDoc in allFoldersSnapshot.docs) {
-      final wordsSnapshot = await _firestore
-          .collection(FirestorePath.words(userId, folderDoc.id))
-          .where('updatedAt', isGreaterThan: lastSyncedAtForQuery)
-          .get();
-
-      if (wordsSnapshot.docs.isEmpty) continue;
-
-      await db.transaction((txn) async {
-        for (final wordDoc in wordsSnapshot.docs) {
-          await _upsertWordWithConflictCheck(
-              txn, wordDoc, userId, folderDoc.id);
+      for (final record in records) {
+        final received = record.serverUpdatedAt;
+        if (received != null && (newest == null || received.isAfter(newest))) {
+          newest = received;
         }
-      });
-    }
-
-    // flashcard_results 差分
-    final resultsSnapshot = await _firestore
-        .collection(FirestorePath.flashcardResults(userId))
-        .where('updatedAt', isGreaterThan: lastSyncedAtForQuery)
-        .get();
-
-    await db.transaction((txn) async {
-      for (final doc in resultsSnapshot.docs) {
-        await _upsertFlashcardResultWithConflictCheck(txn, doc, userId);
-      }
-    });
-
-    // settings 差分
-    final settingsDoc =
-        await _firestore.doc(FirestorePath.settings(userId)).get();
-    if (settingsDoc.exists) {
-      final remoteUpdatedAt =
-          (settingsDoc.data()!['updatedAt'] as Timestamp?)?.toDate();
-      if (remoteUpdatedAt != null &&
-          remoteUpdatedAt.isAfter(lastSyncedAtForQuery)) {
-        await db.transaction((txn) async {
-          await _upsertSettingsWithConflictCheck(txn, settingsDoc, userId);
-        });
       }
     }
 
-    await _updateLastSyncedAt(_dbHelper);
+    // すべて反映できたときだけ基準を進める（途中で失敗したら、次は同じ範囲を取り直す）。
+    // 受付時刻を持つデータが無かった全件取得の後は、最も古い時刻を基準にして次から差分にする
+    await _local.writeMetaDate(
+      _cursorKey(userId),
+      newest ?? DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+    );
+    await _local.writeMetaDate(_lastPulledKey(userId), _now());
   }
 
-  // ----------------------------------------------------------------
-  // 競合チェック付き UPSERT ヘルパー
-  // ----------------------------------------------------------------
-
-  Future<void> _upsertFolderWithConflictCheck(
+  /// 取得した 1 件をローカルに反映する（概要 §取得 の反映表）。
+  Future<void> _applyRemote(
     Transaction txn,
-    DocumentSnapshot doc,
     String userId,
+    SyncRecord remote,
   ) async {
-    final data = doc.data() as Map<String, dynamic>;
-    final remoteUpdatedAt = (data['updatedAt'] as Timestamp).toDate();
+    final table = SyncLocalDataSource.tableOf(remote.entity);
+    final local = await _local.find(txn, remote.entity, remote.id, userId: userId);
 
-    final localRows = await txn.query(
-      FolderTable.tableName,
-      where: 'id = ?',
-      whereArgs: [doc.id],
-    );
-
-    if (localRows.isNotEmpty) {
-      final localRow = localRows.first;
-      if (localRow['syncStatus'] as String == 'pending') return;
-      final localUpdatedAt =
-          DateTime.parse(localRow['updatedAt'] as String);
-      if (localUpdatedAt.isAfter(remoteUpdatedAt)) return;
+    if (local == null) {
+      if (remote.isDeleted) return;
+      await _local.put(txn, remote, userId: userId, pending: false);
+    } else if (!local.pending) {
+      if (!remote.updatedAt.isAfter(local.record.updatedAt)) return;
+      await _local.put(txn, remote, userId: userId, pending: false);
+    } else {
+      // 未送信の変更がある：ローカルの方が新しければ残し、後で送信する
+      if (local.record.updatedAt.isAfter(remote.updatedAt)) return;
+      await _local.put(txn, remote, userId: userId, pending: false);
+      await _queue.deleteForRecord(txn, table, remote.id);
     }
 
-    await txn.insert(
-      FolderTable.tableName,
-      {
-        'id': doc.id,
-        'name': data['name'] as String,
-        'parentFolderId': data['parentFolderId'] as String?,
-        'userId': userId,
-        'createdAt':
-            (data['createdAt'] as Timestamp).toDate().toIso8601String(),
-        'updatedAt': remoteUpdatedAt.toIso8601String(),
-        'syncStatus': 'synced',
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    if (remote.isDeleted) {
+      if (remote.entity == SyncEntity.folder) {
+        await _deleteDescendants(txn, userId, remote.id);
+      }
+      return;
+    }
+    // 削除済みのフォルダの中に届いたデータは、フォルダの削除に合わせて削除済みにする
+    final folderId = switch (remote.entity) {
+      SyncEntity.word => remote.parentId,
+      SyncEntity.flashcardResult => remote.fields['folderId'] as String?,
+      SyncEntity.folder => remote.fields['parentFolderId'] as String?,
+      SyncEntity.settings => null,
+    };
+    if (folderId != null &&
+        await _local.isFolderDeleted(txn, folderId, userId: userId)) {
+      await _markDeletedAndEnqueue(txn, userId, remote.entity, remote.id,
+          parentId: remote.parentId);
+      if (remote.entity == SyncEntity.folder) {
+        await _deleteDescendants(txn, userId, remote.id);
+      }
+    }
   }
 
-  Future<void> _upsertWordWithConflictCheck(
+  /// フォルダの配下を、ローカルの変更があってもすべて削除済みにし、キューに積む。
+  Future<void> _deleteDescendants(
     Transaction txn,
-    DocumentSnapshot doc,
     String userId,
     String folderId,
   ) async {
-    final data = doc.data() as Map<String, dynamic>;
-    final remoteUpdatedAt = (data['updatedAt'] as Timestamp).toDate();
-
-    final localRows = await txn.query(
-      WordTable.tableName,
-      where: 'id = ?',
-      whereArgs: [doc.id],
-    );
-
-    if (localRows.isNotEmpty) {
-      final localRow = localRows.first;
-      if (localRow['syncStatus'] as String == 'pending') return;
-      final localUpdatedAt =
-          DateTime.parse(localRow['updatedAt'] as String);
-      if (localUpdatedAt.isAfter(remoteUpdatedAt)) return;
+    final descendants =
+        await _local.activeDescendants(txn, folderId, userId: userId);
+    for (final d in descendants) {
+      await _markDeletedAndEnqueue(txn, userId, d.entity, d.id, parentId: d.parentId);
     }
-
-    await txn.insert(
-      WordTable.tableName,
-      {
-        'id': doc.id,
-        'front': data['front'] as String,
-        'back': data['back'] as String,
-        'folderId': folderId,
-        'userId': userId,
-        'createdAt':
-            (data['createdAt'] as Timestamp).toDate().toIso8601String(),
-        'updatedAt': remoteUpdatedAt.toIso8601String(),
-        'syncStatus': 'synced',
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
   }
 
-  Future<void> _upsertFlashcardResultWithConflictCheck(
+  Future<void> _markDeletedAndEnqueue(
     Transaction txn,
-    DocumentSnapshot doc,
     String userId,
-  ) async {
-    final data = doc.data() as Map<String, dynamic>;
-    final remoteUpdatedAt = (data['updatedAt'] as Timestamp).toDate();
-
-    final localRows = await txn.query(
-      FlashcardResultTable.tableName,
-      where: 'id = ?',
-      whereArgs: [doc.id],
+    SyncEntity entity,
+    String id, {
+    String? parentId,
+  }) async {
+    final table = SyncLocalDataSource.tableOf(entity);
+    await _local.markDeleted(txn, entity, id, _now());
+    await _queue.enqueueInTransaction(
+      txn,
+      operation: _operationDelete,
+      tableName: table,
+      recordId: id,
+      parentId: parentId,
+      userId: userId,
     );
+  }
 
-    if (localRows.isNotEmpty) {
-      final localRow = localRows.first;
-      if (localRow['syncStatus'] as String == 'pending') return;
-      final localUpdatedAt =
-          DateTime.parse(localRow['updatedAt'] as String);
-      if (localUpdatedAt.isAfter(remoteUpdatedAt)) return;
+  // ---------------------------------------------------------------
+  // 送信（ローカル → リモート）
+  // ---------------------------------------------------------------
+
+  /// 失敗したらそこで止める（例外を投げる）。残りは順番を保ったままキューに残る。
+  Future<void> _push(String userId) async {
+    final items = await _queue.getByUser(userId);
+    final db = await _local.database;
+    for (final item in items) {
+      final entity = SyncLocalDataSource.entityOf(item.tableName);
+      final local = await _local.find(db, entity, item.recordId, userId: userId);
+      final record = local?.record ?? _legacyTombstone(entity, item);
+      if (record == null) {
+        // 行が無く、送るものが無い（登録してすぐ消えた等）項目は捨てる
+        await _queue.delete(item.id);
+        continue;
+      }
+
+      final newerRemote = await _remoteCall(_remote.writeIfNewer(userId, record));
+
+      await db.transaction((txn) async {
+        if (newerRemote == null) {
+          await _queue.delete(item.id, txn);
+          if (local != null &&
+              !await _queue.hasItemsForRecord(txn, item.tableName, item.recordId)) {
+            await _local.markSynced(txn, entity, item.recordId);
+          }
+          return;
+        }
+        // リモートの方が新しいか同じ：書き込まずに、リモートの内容でローカルを上書きする。
+        // ただし送信中にローカルがさらに変更されていたら、その変更は次の項目で送る
+        final current =
+            await _local.find(txn, entity, item.recordId, userId: userId);
+        if (current != null &&
+            current.record.updatedAt.isAfter(newerRemote.updatedAt)) {
+          await _queue.delete(item.id, txn);
+          return;
+        }
+        await _applyRemote(txn, userId, newerRemote);
+        await _queue.deleteForRecord(txn, item.tableName, item.recordId);
+      });
     }
+  }
 
-    await txn.insert(
-      FlashcardResultTable.tableName,
-      {
-        'id': doc.id,
-        'folderId': data['folderId'] as String,
-        'totalCount': data['totalCount'] as int,
-        'correctCount': data['correctCount'] as int,
-        'date': (data['date'] as Timestamp).toDate().toIso8601String(),
-        'userId': userId,
-        'updatedAt': remoteUpdatedAt.toIso8601String(),
-        'syncStatus': 'synced',
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
+  /// バージョン1のキューに残っていた削除（行は物理的に消えている）を、リモートの論理削除として送る。
+  SyncRecord? _legacyTombstone(SyncEntity entity, SyncQueueItem item) {
+    if (item.operation != _operationDelete) return null;
+    if (entity == SyncEntity.word && item.parentId == null) return null;
+    return SyncRecord(
+      entity: entity,
+      id: item.recordId,
+      parentId: item.parentId,
+      fields: const {},
+      updatedAt: item.createdAt,
+      deletedAt: item.createdAt,
     );
   }
 
-  Future<void> _upsertSettingsWithConflictCheck(
-    Transaction txn,
-    DocumentSnapshot doc,
-    String userId,
-  ) async {
-    final data = doc.data() as Map<String, dynamic>;
-    final remoteUpdatedAtRaw = data['updatedAt'];
-    final remoteUpdatedAt = remoteUpdatedAtRaw is Timestamp
-        ? remoteUpdatedAtRaw.toDate()
-        : DateTime.now();
-
-    final localRows = await txn.query(
-      SettingsTable.tableName,
-      where: 'userId = ?',
-      whereArgs: [userId],
-    );
-
-    if (localRows.isNotEmpty) {
-      final localRow = localRows.first;
-      if (localRow['syncStatus'] as String == 'pending') return;
-      final localUpdatedAt =
-          DateTime.parse(localRow['updatedAt'] as String);
-      if (localUpdatedAt.isAfter(remoteUpdatedAt)) return;
-    }
-
-    await txn.insert(
-      SettingsTable.tableName,
-      {
-        'userId': userId,
-        'colorTheme': (data['colorTheme'] as String?) ?? 'indigo',
-        'darkMode': (data['darkMode'] as bool? ?? false) ? 1 : 0,
-        'updatedAt': remoteUpdatedAt.toIso8601String(),
-        'syncStatus': 'synced',
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  // ----------------------------------------------------------------
-  // lastSyncedAt 管理
-  // ----------------------------------------------------------------
-
-  Future<void> _updateLastSyncedAt(DatabaseHelper helper) async {
-    final db = await helper.database;
-    await db.insert(
-      SyncMetaTable.tableName,
-      {
-        'key': 'lastSyncedAt',
-        'value': DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<DateTime?> _getLastSyncedAt(DatabaseHelper helper) async {
-    final db = await helper.database;
-    final rows = await db.query(
-      SyncMetaTable.tableName,
-      where: 'key = ?',
-      whereArgs: ['lastSyncedAt'],
-    );
-    if (rows.isEmpty) return null;
-    return DateTime.parse(rows.first['value'] as String);
-  }
+  /// Repository がキューに積むときの操作名
+  static String operationFor({required bool isDelete}) =>
+      isDelete ? _operationDelete : _operationUpsert;
 }
+
+enum _Job { full, push }

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:word_stock/core/di/auth_providers.dart';
 import 'package:word_stock/core/di/repository_providers.dart';
+import 'package:word_stock/core/di/sync_providers.dart';
 import 'package:word_stock/core/error/failure.dart';
 import 'package:word_stock/core/widgets/error_screen.dart';
 import 'package:word_stock/domain/entities/sample.dart';
@@ -13,6 +14,7 @@ import 'package:word_stock/infrastructure/repositories/mock/mock_auth_repository
 import 'package:word_stock/infrastructure/repositories/mock/mock_flashcard_result_repository.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_folder_repository.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_settings_repository.dart';
+import 'package:word_stock/infrastructure/repositories/mock/mock_sync_repository.dart';
 import 'package:word_stock/infrastructure/repositories/mock/mock_word_repository.dart';
 import 'package:word_stock/presentation/sample/sample_page.dart';
 import 'package:word_stock/presentation/sample/widgets/sample_list_tile.dart';
@@ -92,6 +94,7 @@ Widget _buildPageWithRouter(FakeSampleRepository repo, {List<Override> extra = c
       wordRepositoryProvider.overrideWithValue(MockWordRepository()),
       settingsRepositoryProvider.overrideWithValue(MockSettingsRepository()),
       flashcardResultRepositoryProvider.overrideWithValue(MockFlashcardResultRepository()),
+      syncRepositoryProvider.overrideWithValue(MockSyncRepository()),
       currentUserProvider.overrideWithValue(testUser),
       sampleRepositoryProvider.overrideWithValue(repo),
       ...extra,

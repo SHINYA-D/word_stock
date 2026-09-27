@@ -23,7 +23,7 @@ final authRepositoryProvider = Provider<AuthRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef AuthRepositoryRef = ProviderRef<AuthRepository>;
-String _$folderRepositoryHash() => r'bde45dcec7e0ab22d34b122d65330626d00727b9';
+String _$folderRepositoryHash() => r'6405fcf791e1e0a4fb70cce1097f549164726e61';
 
 /// See also [folderRepository].
 @ProviderFor(folderRepository)
@@ -40,7 +40,7 @@ final folderRepositoryProvider = Provider<FolderRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef FolderRepositoryRef = ProviderRef<FolderRepository>;
-String _$wordRepositoryHash() => r'5d6fdfd4fbf10b3a52605fffb60384791ebe8ac4';
+String _$wordRepositoryHash() => r'954034ed12dee9f61749276066857f8edf2bdea5';
 
 /// See also [wordRepository].
 @ProviderFor(wordRepository)
@@ -58,7 +58,7 @@ final wordRepositoryProvider = Provider<WordRepository>.internal(
 // ignore: unused_element
 typedef WordRepositoryRef = ProviderRef<WordRepository>;
 String _$flashcardResultRepositoryHash() =>
-    r'16e875292048fdd694625fac2f4d403c1b9e110e';
+    r'b89170cc4ee8682e1f8f7015318bc08f825ffb41';
 
 /// See also [flashcardResultRepository].
 @ProviderFor(flashcardResultRepository)
@@ -77,7 +77,7 @@ final flashcardResultRepositoryProvider =
 // ignore: unused_element
 typedef FlashcardResultRepositoryRef = ProviderRef<FlashcardResultRepository>;
 String _$settingsRepositoryHash() =>
-    r'c11f3897527637880a5ddb6dac0e0d58cdedaa20';
+    r'449ff54683c488ba0c303e0358f7be3d66b42a0d';
 
 /// See also [settingsRepository].
 @ProviderFor(settingsRepository)
