@@ -29,8 +29,10 @@ jobs:
       - name: Make .fvm/flutter_sdk
         run: ln -s ${{ steps.flutter-action.outputs.CACHE-PATH }} .fvm/flutter_sdk
 
-      - name: Decode firebase_options.dart
-        run: echo ${{ secrets.FIREBASE_OPTIONS_BASE64 }} | base64 --decode > lib/firebase_options.dart
+      - name: Decode firebase_options_dev.dart
+        run: |
+          mkdir -p lib/core/firebase/options
+          echo ${{ secrets.FIREBASE_OPTIONS_BASE64 }} | base64 --decode > lib/core/firebase/options/firebase_options_dev.dart
 
       - name: Install dependencies
         run: flutter pub get

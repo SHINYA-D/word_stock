@@ -236,10 +236,10 @@ fvm dart pub global activate flutterfire_cli
 ```
 > `flutterfire`コマンドが見つからない場合は`~/.pub-cache/bin`にPATHが通っているか確認してください。
 
-⑨ Firebase にログインし、設定ファイルを生成する（`lib/firebase_options.dart` が生成される）
+⑨ Firebase にログインし、設定ファイルを生成する（`lib/core/firebase/options/firebase_options_dev.dart` が生成される）
 ```
 firebase login
-flutterfire configure
+flutterfire configure --out=lib/core/firebase/options/firebase_options_dev.dart
 ```
 
 ⑩ Firebaseコンソールから各ファイルをダウンロードして配置する
