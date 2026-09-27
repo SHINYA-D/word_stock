@@ -1499,6 +1499,7 @@ void main() {
       expect(find.text('編集'), findsOneWidget);
       expect(find.text('削除'), findsOneWidget);
       expect(find.byType(SamplePage), findsOneWidget);
+      expect(GoRouterState.of(tester.element(find.byType(SamplePage))).matchedLocation, '/sample');
     });
   });
 

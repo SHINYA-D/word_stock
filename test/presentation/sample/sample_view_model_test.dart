@@ -1,8 +1,8 @@
 import 'dart:async';
 
-import 'package:fpdart/fpdart.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:word_stock/application/use_cases/sample/create_sample_use_case.dart';
 import 'package:word_stock/application/use_cases/sample/delete_sample_use_case.dart';
 import 'package:word_stock/application/use_cases/sample/get_samples_use_case.dart';
@@ -14,229 +14,247 @@ import 'package:word_stock/domain/entities/app_user.dart';
 import 'package:word_stock/domain/entities/sample.dart';
 import 'package:word_stock/presentation/sample/sample_view_model.dart';
 
-/// 仕様書 docs/detailed_design/presentation/sample/sample_page.md 4章の
-/// 「ログイン中のユーザーは id が `u1` のユーザーとする」に合わせたテスト用ユーザー。
+/// 仕様書（docs/detailed_design/presentation/sample/sample_page.md）4章の
+/// 「条件のログイン中のユーザーは id が u1 のユーザーとする」に合わせたテスト用ユーザー。
 const _testUser = AppUser(id: 'u1', email: 'u1@example.com');
 
-Sample _sample(String id, String name, DateTime createdAt) =>
-    Sample(id: id, name: name, createdAt: createdAt, updatedAt: createdAt);
-
-final _sampleA = _sample('sample-a', 'A', DateTime(2024, 1, 1));
-final _sampleB = _sample('sample-b', 'B', DateTime(2024, 1, 2));
-final _sampleC = _sample('sample-c', 'C', DateTime(2024, 1, 3));
-// SMP-V22 用。「A」と同名だが id が異なる、作成で新しく生まれたサンプル。
-final _sampleA2 = _sample('sample-a2', 'A', DateTime(2024, 1, 4));
+final _sampleA = Sample(
+  id: 'sample-a',
+  name: 'A',
+  createdAt: DateTime(2024, 1, 1),
+  updatedAt: DateTime(2024, 1, 1),
+);
+final _sampleB = Sample(
+  id: 'sample-b',
+  name: 'B',
+  createdAt: DateTime(2024, 1, 2),
+  updatedAt: DateTime(2024, 1, 2),
+);
+final _sampleC = Sample(
+  id: 'sample-c',
+  name: 'C',
+  createdAt: DateTime(2024, 1, 3),
+  updatedAt: DateTime(2024, 1, 3),
+);
 
 /// GetSamplesUseCase の手書き Fake。
-/// `call()` が呼ばれるたびに `results` を先頭から1つ消費して返す。
-/// `gatedIndexes` に含まれる呼び出し順（0始まり）は、対応する `gates[index]` を
-/// `complete()` するまで結果を返さない（並行処理の完了順を制御するテストで使う）。
+/// 呼び出しごとに Completer を1つ積む。コンストラクタに渡した `autoResults` の件数分は
+/// 呼ばれた瞬間に自動で解決する。それを超える呼び出しは `pending` から手動で解決する
+/// （SMP-V43・SMP-V44 のような、呼び出し順と完了順が食い違うケースを再現するため）。
 class FakeGetSamplesUseCase implements GetSamplesUseCase {
-  FakeGetSamplesUseCase(this.results, {Set<int> gatedIndexes = const {}}) {
-    for (final i in gatedIndexes) {
-      gates[i] = Completer<void>();
-    }
-  }
+  FakeGetSamplesUseCase([this._autoResults = const []]);
 
-  final List<Either<Failure, List<Sample>>> results;
-  final Map<int, Completer<void>> gates = {};
-  int callCount = 0;
+  final List<Either<Failure, List<Sample>>> _autoResults;
   final List<String> calledUserIds = [];
+  final List<Completer<Either<Failure, List<Sample>>>> pending = [];
 
   @override
-  Future<Either<Failure, List<Sample>>> call({required String userId}) async {
-    final index = callCount;
+  Future<Either<Failure, List<Sample>>> call({required String userId}) {
     calledUserIds.add(userId);
-    callCount++;
-    final gate = gates[index];
-    if (gate != null) {
-      await gate.future;
+    final index = pending.length;
+    final completer = Completer<Either<Failure, List<Sample>>>();
+    pending.add(completer);
+    if (index < _autoResults.length) {
+      completer.complete(_autoResults[index]);
     }
-    return results[index < results.length ? index : results.length - 1];
+    return completer.future;
   }
 }
 
-/// CreateSampleUseCase の手書き Fake。
+/// CreateSampleUseCase の手書き Fake。1テスト内では1回だけ呼ばれる前提。
 class FakeCreateSampleUseCase implements CreateSampleUseCase {
-  FakeCreateSampleUseCase(this.result);
+  FakeCreateSampleUseCase([Either<Failure, Sample>? autoResult]) {
+    if (autoResult != null) completer.complete(autoResult);
+  }
 
-  final Either<Failure, Sample> result;
+  final Completer<Either<Failure, Sample>> completer = Completer();
+  String? calledUserId;
+  String? calledName;
   int callCount = 0;
-  final List<({String userId, String name})> calls = [];
 
   @override
   Future<Either<Failure, Sample>> call({
     required String userId,
     required String name,
-  }) async {
-    calls.add((userId: userId, name: name));
+  }) {
     callCount++;
-    return result;
+    calledUserId = userId;
+    calledName = name;
+    return completer.future;
   }
 }
 
-/// UpdateSampleUseCase の手書き Fake。
+/// UpdateSampleUseCase の手書き Fake。1テスト内では1回だけ呼ばれる前提。
 class FakeUpdateSampleUseCase implements UpdateSampleUseCase {
-  FakeUpdateSampleUseCase(this.result);
+  FakeUpdateSampleUseCase([Either<Failure, Sample>? autoResult]) {
+    if (autoResult != null) completer.complete(autoResult);
+  }
 
-  final Either<Failure, Sample> result;
+  final Completer<Either<Failure, Sample>> completer = Completer();
+  String? calledUserId;
+  String? calledSampleId;
+  String? calledName;
   int callCount = 0;
-  final List<({String userId, String sampleId, String name})> calls = [];
 
   @override
   Future<Either<Failure, Sample>> call({
     required String userId,
     required String sampleId,
     required String name,
-  }) async {
-    calls.add((userId: userId, sampleId: sampleId, name: name));
+  }) {
     callCount++;
-    return result;
+    calledUserId = userId;
+    calledSampleId = sampleId;
+    calledName = name;
+    return completer.future;
   }
 }
 
-/// DeleteSampleUseCase の手書き Fake。
-/// `gate` を渡すと `call()` の完了を任意のタイミングまで遅延させられる
-/// （削除と他の操作の完了順を制御するテストで使う）。
+/// DeleteSampleUseCase の手書き Fake。1テスト内では1回だけ呼ばれる前提。
 class FakeDeleteSampleUseCase implements DeleteSampleUseCase {
-  FakeDeleteSampleUseCase(this.result, {this.gate});
+  FakeDeleteSampleUseCase([Either<Failure, Unit>? autoResult]) {
+    if (autoResult != null) completer.complete(autoResult);
+  }
 
-  final Either<Failure, Unit> result;
-  final Completer<void>? gate;
+  final Completer<Either<Failure, Unit>> completer = Completer();
+  String? calledUserId;
+  String? calledSampleId;
   int callCount = 0;
-  final List<({String userId, String sampleId})> calls = [];
 
   @override
   Future<Either<Failure, Unit>> call({
     required String userId,
     required String sampleId,
-  }) async {
-    calls.add((userId: userId, sampleId: sampleId));
+  }) {
     callCount++;
-    if (gate != null) {
-      await gate!.future;
-    }
-    return result;
+    calledUserId = userId;
+    calledSampleId = sampleId;
+    return completer.future;
   }
 }
 
 ProviderContainer _makeContainer({
-  required GetSamplesUseCase getSamplesUseCase,
-  CreateSampleUseCase? createSampleUseCase,
-  UpdateSampleUseCase? updateSampleUseCase,
-  DeleteSampleUseCase? deleteSampleUseCase,
+  required FakeGetSamplesUseCase getSamplesUseCase,
+  FakeCreateSampleUseCase? createSampleUseCase,
+  FakeUpdateSampleUseCase? updateSampleUseCase,
+  FakeDeleteSampleUseCase? deleteSampleUseCase,
 }) {
   final container = ProviderContainer(overrides: [
     getSamplesUseCaseProvider.overrideWithValue(getSamplesUseCase),
-    if (createSampleUseCase != null)
-      createSampleUseCaseProvider.overrideWithValue(createSampleUseCase),
-    if (updateSampleUseCase != null)
-      updateSampleUseCaseProvider.overrideWithValue(updateSampleUseCase),
-    if (deleteSampleUseCase != null)
-      deleteSampleUseCaseProvider.overrideWithValue(deleteSampleUseCase),
+    createSampleUseCaseProvider
+        .overrideWithValue(createSampleUseCase ?? FakeCreateSampleUseCase()),
+    updateSampleUseCaseProvider
+        .overrideWithValue(updateSampleUseCase ?? FakeUpdateSampleUseCase()),
+    deleteSampleUseCaseProvider
+        .overrideWithValue(deleteSampleUseCase ?? FakeDeleteSampleUseCase()),
     currentUserProvider.overrideWithValue(_testUser),
   ]);
   addTearDown(container.dispose);
-  // build() は Future.microtask で初期ロードを行うだけの同期 Notifier のため、
-  // autoDispose によって初期ロード完了前に破棄されないようリスナーを張り続ける。
-  container.listen(sampleViewModelProvider, (_, __) {});
+  // build() を即座に走らせ、以後もリスナーを保持する。
+  // sampleViewModelProvider は AutoDispose のため、リスナーが無いまま read するだけだと
+  // build() 内の Future.microtask(() => _initState()) が走る前に provider が破棄され、
+  // 新しい notifier インスタンスが作られて _userId が未初期化のままになる。
+  container.listen(sampleViewModelProvider, (_, __) {}, fireImmediately: true);
   return container;
 }
 
-/// `samples` が読み込み中でなくなるまでマイクロタスクを消費して待つ。
-Future<void> _waitUntilNotLoading(ProviderContainer container) async {
-  while (container.read(sampleViewModelProvider).samples.isLoading) {
-    await Future<void>.microtask(() {});
-  }
-}
-
-/// `condition` が真になるまでマイクロタスクを消費して待つ（上限あり）。
-Future<void> _waitUntil(bool Function() condition, {int maxTicks = 200}) async {
-  var ticks = 0;
-  while (!condition() && ticks < maxTicks) {
-    await Future<void>.microtask(() {});
-    ticks++;
-  }
-}
+/// build() 内の `Future.microtask(() => _initState())` が完了するまでイベントループを流す。
+Future<void> _flush() => Future<void>.delayed(Duration.zero);
 
 void main() {
   group('SampleViewModel.build', () {
-    test('生成した直後、初期読み込みが完了していない場合、samples は AsyncLoading になる [SMP-V01 #7fe5c0]', () {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA])]),
-      );
+    test(
+        'ViewModelを生成し、初期読み込みが完了していない場合、samples が AsyncLoading になる '
+        '[SMP-V01 #7fe5c0]', () {
+      final getSamples =
+          FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final container = _makeContainer(getSamplesUseCase: getSamples);
 
-      expect(container.read(sampleViewModelProvider).samples.isLoading, isTrue);
+      final state = container.read(sampleViewModelProvider);
+
+      expect(state.samples.isLoading, isTrue);
+      expect(state.samples.hasValue, isFalse);
     });
 
-    test('getSamples が「A」「B」（作成日時が古い順）を返した場合、samples は AsyncData([A, B]) になり、getSamples が userId u1 で1回呼ばれる [SMP-V02 #741bef]', () async {
-      final getSamplesUseCase =
+    test(
+        'ViewModelを生成し、getSamples が「A」「B」（作成日時が古い順）を返した場合、'
+        'samples が AsyncData([A, B]) になり、Repository の getSamples が userId u1 で1回呼ばれる '
+        '[SMP-V02 #741bef]', () async {
+      final getSamples =
           FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
-      final container = _makeContainer(getSamplesUseCase: getSamplesUseCase);
+      final container = _makeContainer(getSamplesUseCase: getSamples);
 
-      await _waitUntilNotLoading(container);
+      await _flush();
 
       final state = container.read(sampleViewModelProvider);
       expect(state.samples.value, [_sampleA, _sampleB]);
-      expect(getSamplesUseCase.callCount, 1);
-      expect(getSamplesUseCase.calledUserIds, ['u1']);
+      expect(getSamples.calledUserIds, ['u1']);
     });
 
-    test('getSamples が空の一覧を返した場合、samples は AsyncData([]) になる [SMP-V03 #23dca6]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([const Right([])]),
-      );
+    test(
+        'ViewModelを生成し、getSamples が空の一覧を返した場合、samples が AsyncData([]) になる '
+        '[SMP-V03 #23dca6]', () async {
+      final getSamples = FakeGetSamplesUseCase([const Right([])]);
+      final container = _makeContainer(getSamplesUseCase: getSamples);
 
-      await _waitUntilNotLoading(container);
+      await _flush();
 
       expect(container.read(sampleViewModelProvider).samples.value, isEmpty);
     });
 
-    test('getSamples が UnknownFailure を返した場合、samples は AsyncError(UnknownFailure) になる [SMP-V04 #9f3345]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase:
-            FakeGetSamplesUseCase([const Left(Failure.unknown('boom'))]),
-      );
+    test(
+        'ViewModelを生成し、getSamples が UnknownFailure を返した場合、'
+        'samples が AsyncError(UnknownFailure) になる '
+        '[SMP-V04 #9f3345]', () async {
+      final getSamples =
+          FakeGetSamplesUseCase([Left(Failure.unknown('boom'))]);
+      final container = _makeContainer(getSamplesUseCase: getSamples);
 
-      await _waitUntilNotLoading(container);
+      await _flush();
 
       final state = container.read(sampleViewModelProvider);
       expect(state.samples.hasError, isTrue);
       expect(state.samples.error, const Failure.unknown('boom'));
     });
 
-    test('getSamples が NotFoundFailure を返した場合、samples は AsyncError(NotFoundFailure) になる [SMP-V05 #2d2b4c]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase:
-            FakeGetSamplesUseCase([const Left(Failure.notFound())]),
-      );
+    test(
+        'ViewModelを生成し、getSamples が NotFoundFailure を返した場合、'
+        'samples が AsyncError(NotFoundFailure) になる '
+        '[SMP-V05 #2d2b4c]', () async {
+      final getSamples =
+          FakeGetSamplesUseCase([const Left(Failure.notFound())]);
+      final container = _makeContainer(getSamplesUseCase: getSamples);
 
-      await _waitUntilNotLoading(container);
+      await _flush();
 
       final state = container.read(sampleViewModelProvider);
       expect(state.samples.hasError, isTrue);
       expect(state.samples.error, const Failure.notFound());
     });
 
-    test('getSamples が NetworkFailure を返した場合、operationFailure は NetworkFailure になり、samples は AsyncData([]) になる [SMP-V06 #d6a69b]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase:
-            FakeGetSamplesUseCase([const Left(Failure.network())]),
-      );
+    test(
+        'ViewModelを生成し、getSamples が NetworkFailure を返した場合、'
+        'operationFailure が NetworkFailure になり、samples が AsyncData([]) になる '
+        '[SMP-V06 #d6a69b]', () async {
+      final getSamples =
+          FakeGetSamplesUseCase([const Left(Failure.network())]);
+      final container = _makeContainer(getSamplesUseCase: getSamples);
 
-      await _waitUntilNotLoading(container);
+      await _flush();
 
       final state = container.read(sampleViewModelProvider);
       expect(state.operationFailure, const Failure.network());
       expect(state.samples.value, isEmpty);
     });
 
-    test('getSamples が AuthFailure を返した場合、operationFailure は AuthFailure になり、samples は AsyncData([]) になる [SMP-V07 #b65944]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([const Left(Failure.auth())]),
-      );
+    test(
+        'ViewModelを生成し、getSamples が AuthFailure を返した場合、'
+        'operationFailure が AuthFailure になり、samples が AsyncData([]) になる '
+        '[SMP-V07 #b65944]', () async {
+      final getSamples = FakeGetSamplesUseCase([const Left(Failure.auth())]);
+      final container = _makeContainer(getSamplesUseCase: getSamples);
 
-      await _waitUntilNotLoading(container);
+      await _flush();
 
       final state = container.read(sampleViewModelProvider);
       expect(state.operationFailure, const Failure.auth());
@@ -245,65 +263,71 @@ void main() {
   });
 
   group('SampleViewModel.refresh', () {
-    test('初期読み込みが UnknownFailure で失敗した状態で、getSamples が「A」を返すようにして refresh を呼んだ場合、samples は AsyncData([A]) になり、getSamples が2回目の呼び出しでも userId u1 で呼ばれる [SMP-V08 #e2bf2c]', () async {
-      final getSamplesUseCase = FakeGetSamplesUseCase([
-        const Left(Failure.unknown('boom')),
-        Right([_sampleA]),
-      ]);
-      final container = _makeContainer(getSamplesUseCase: getSamplesUseCase);
-      await _waitUntilNotLoading(container);
-
+    test(
+        '初期読み込みが UnknownFailure で失敗した状態で、getSamples が「A」を返すようにして refresh を呼んだ場合、'
+        'samples が AsyncData([A]) になり、Repository の getSamples が2回目の呼び出しでも userId u1 で呼ばれる '
+        '[SMP-V08 #e2bf2c]', () async {
+      final getSamples = FakeGetSamplesUseCase(
+        [Left(Failure.unknown('boom')), Right([_sampleA])],
+      );
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.refresh();
 
-      expect(container.read(sampleViewModelProvider).samples.value, [_sampleA]);
-      expect(getSamplesUseCase.calledUserIds, ['u1', 'u1']);
+      final state = container.read(sampleViewModelProvider);
+      expect(state.samples.value, [_sampleA]);
+      expect(getSamples.calledUserIds, ['u1', 'u1']);
     });
 
-    test('初期読み込みが UnknownFailure で失敗した状態で refresh を呼び、読み込みが完了していない場合、samples は AsyncLoading になる [SMP-V09 #0551fd]', () async {
-      final getSamplesUseCase = FakeGetSamplesUseCase(
-        [const Left(Failure.unknown('boom')), Right([_sampleA])],
-        gatedIndexes: {1},
+    test(
+        '初期読み込みが UnknownFailure で失敗した状態で refresh を呼び、読み込みが完了していない場合、'
+        'samples が AsyncLoading になる '
+        '[SMP-V09 #0551fd]', () async {
+      final getSamples = FakeGetSamplesUseCase(
+        [Left(Failure.unknown('boom')), Right([_sampleA])],
       );
-      final container = _makeContainer(getSamplesUseCase: getSamplesUseCase);
-      await _waitUntilNotLoading(container);
-
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
-      final refreshFuture = notifier.refresh();
+
+      final future = notifier.refresh();
 
       expect(container.read(sampleViewModelProvider).samples.isLoading, isTrue);
 
-      getSamplesUseCase.gates[1]!.complete();
-      await refreshFuture;
+      await future;
     });
 
-    test('初期読み込みが UnknownFailure で失敗した状態で refresh を呼び、getSamples が再び UnknownFailure を返した場合、samples は AsyncError(UnknownFailure) になる [SMP-V10 #0e8d4b]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([
-          const Left(Failure.unknown('boom')),
-          const Left(Failure.unknown('boom')),
-        ]),
+    test(
+        '初期読み込みが UnknownFailure で失敗した状態で refresh を呼び、'
+        'getSamples が再び UnknownFailure を返した場合、samples が AsyncError(UnknownFailure) になる '
+        '[SMP-V10 #0e8d4b]', () async {
+      final getSamples = FakeGetSamplesUseCase(
+        [Left(Failure.unknown('boom')), Left(Failure.unknown('boom2'))],
       );
-      await _waitUntilNotLoading(container);
-
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.refresh();
 
       final state = container.read(sampleViewModelProvider);
       expect(state.samples.hasError, isTrue);
-      expect(state.samples.error, const Failure.unknown('boom'));
+      expect(state.samples.error, const Failure.unknown('boom2'));
     });
 
-    test('初期読み込みが UnknownFailure で失敗した状態で refresh を呼び、getSamples が NotFoundFailure を返した場合、samples は AsyncError(NotFoundFailure) になる [SMP-V11 #86bf63]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([
-          const Left(Failure.unknown('boom')),
-          const Left(Failure.notFound()),
-        ]),
+    test(
+        '初期読み込みが UnknownFailure で失敗した状態で refresh を呼び、'
+        'getSamples が NotFoundFailure を返した場合、samples が AsyncError(NotFoundFailure) になる '
+        '[SMP-V11 #86bf63]', () async {
+      final getSamples = FakeGetSamplesUseCase(
+        [Left(Failure.unknown('boom')), const Left(Failure.notFound())],
       );
-      await _waitUntilNotLoading(container);
-
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.refresh();
 
       final state = container.read(sampleViewModelProvider);
@@ -311,61 +335,73 @@ void main() {
       expect(state.samples.error, const Failure.notFound());
     });
 
-    test('初期読み込みが UnknownFailure で失敗した状態で refresh を呼び、getSamples が NetworkFailure を返した場合、operationFailure は NetworkFailure になる [SMP-V12 #d97a68]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([
-          const Left(Failure.unknown('boom')),
-          const Left(Failure.network()),
-        ]),
+    test(
+        '初期読み込みが UnknownFailure で失敗した状態で refresh を呼び、'
+        'getSamples が NetworkFailure を返した場合、operationFailure が NetworkFailure になる '
+        '[SMP-V12 #d97a68]', () async {
+      final getSamples = FakeGetSamplesUseCase(
+        [Left(Failure.unknown('boom')), const Left(Failure.network())],
       );
-      await _waitUntilNotLoading(container);
-
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.refresh();
 
-      expect(container.read(sampleViewModelProvider).operationFailure, const Failure.network());
+      expect(
+        container.read(sampleViewModelProvider).operationFailure,
+        const Failure.network(),
+      );
     });
 
-    test('初期読み込みが UnknownFailure で失敗した状態で refresh を呼び、getSamples が AuthFailure を返した場合、operationFailure は AuthFailure になる [SMP-V13 #0ea055]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([
-          const Left(Failure.unknown('boom')),
-          const Left(Failure.auth()),
-        ]),
+    test(
+        '初期読み込みが UnknownFailure で失敗した状態で refresh を呼び、'
+        'getSamples が AuthFailure を返した場合、operationFailure が AuthFailure になる '
+        '[SMP-V13 #0ea055]', () async {
+      final getSamples = FakeGetSamplesUseCase(
+        [Left(Failure.unknown('boom')), const Left(Failure.auth())],
       );
-      await _waitUntilNotLoading(container);
-
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.refresh();
 
-      expect(container.read(sampleViewModelProvider).operationFailure, const Failure.auth());
+      expect(
+        container.read(sampleViewModelProvider).operationFailure,
+        const Failure.auth(),
+      );
     });
 
-    test('samples が AsyncData([A]) の状態で refresh を呼び、getSamples が「A」「B」を返した場合、samples は AsyncData([A, B]) になり、getSamples が userId u1 で呼ばれる [SMP-V14 #f3b21c]', () async {
-      final getSamplesUseCase = FakeGetSamplesUseCase([
-        Right([_sampleA]),
-        Right([_sampleA, _sampleB]),
-      ]);
-      final container = _makeContainer(getSamplesUseCase: getSamplesUseCase);
-      await _waitUntilNotLoading(container);
-
+    test(
+        'samples が AsyncData([A]) の状態で refresh を呼び、getSamples が「A」「B」を返した場合、'
+        'samples が AsyncData([A, B]) になり、Repository の getSamples が userId u1 で呼ばれる '
+        '[SMP-V14 #f3b21c]', () async {
+      final getSamples = FakeGetSamplesUseCase(
+        [Right([_sampleA]), Right([_sampleA, _sampleB])],
+      );
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.refresh();
 
-      expect(container.read(sampleViewModelProvider).samples.value, [_sampleA, _sampleB]);
-      expect(getSamplesUseCase.calledUserIds, ['u1', 'u1']);
+      final state = container.read(sampleViewModelProvider);
+      expect(state.samples.value, [_sampleA, _sampleB]);
+      expect(getSamples.calledUserIds, ['u1', 'u1']);
     });
 
-    test('samples が AsyncData([A]) の状態で refresh を呼び、getSamples が UnknownFailure を返した場合、samples は AsyncData([A]) のままで、operationFailure は UnknownFailure になる [SMP-V15 #e5b719]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([
-          Right([_sampleA]),
-          const Left(Failure.unknown('boom')),
-        ]),
+    test(
+        'samples が AsyncData([A]) の状態で refresh を呼び、getSamples が UnknownFailure を返した場合、'
+        'samples が AsyncData([A]) のままになり、operationFailure が UnknownFailure になる '
+        '[SMP-V15 #e5b719]', () async {
+      final getSamples = FakeGetSamplesUseCase(
+        [Right([_sampleA]), Left(Failure.unknown('boom'))],
       );
-      await _waitUntilNotLoading(container);
-
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.refresh();
 
       final state = container.read(sampleViewModelProvider);
@@ -373,16 +409,17 @@ void main() {
       expect(state.operationFailure, const Failure.unknown('boom'));
     });
 
-    test('samples が AsyncData([A]) の状態で refresh を呼び、getSamples が NotFoundFailure を返した場合、samples は AsyncData([A]) のままで、operationFailure は NotFoundFailure になる [SMP-V16 #21b3a4]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([
-          Right([_sampleA]),
-          const Left(Failure.notFound()),
-        ]),
+    test(
+        'samples が AsyncData([A]) の状態で refresh を呼び、getSamples が NotFoundFailure を返した場合、'
+        'samples が AsyncData([A]) のままになり、operationFailure が NotFoundFailure になる '
+        '[SMP-V16 #21b3a4]', () async {
+      final getSamples = FakeGetSamplesUseCase(
+        [Right([_sampleA]), const Left(Failure.notFound())],
       );
-      await _waitUntilNotLoading(container);
-
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.refresh();
 
       final state = container.read(sampleViewModelProvider);
@@ -390,16 +427,17 @@ void main() {
       expect(state.operationFailure, const Failure.notFound());
     });
 
-    test('samples が AsyncData([A]) の状態で refresh を呼び、getSamples が NetworkFailure を返した場合、samples は AsyncData([A]) のままで、operationFailure は NetworkFailure になる [SMP-V17 #148c4b]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([
-          Right([_sampleA]),
-          const Left(Failure.network()),
-        ]),
+    test(
+        'samples が AsyncData([A]) の状態で refresh を呼び、getSamples が NetworkFailure を返した場合、'
+        'samples が AsyncData([A]) のままになり、operationFailure が NetworkFailure になる '
+        '[SMP-V17 #148c4b]', () async {
+      final getSamples = FakeGetSamplesUseCase(
+        [Right([_sampleA]), const Left(Failure.network())],
       );
-      await _waitUntilNotLoading(container);
-
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.refresh();
 
       final state = container.read(sampleViewModelProvider);
@@ -407,16 +445,17 @@ void main() {
       expect(state.operationFailure, const Failure.network());
     });
 
-    test('samples が AsyncData([A]) の状態で refresh を呼び、getSamples が AuthFailure を返した場合、samples は AsyncData([A]) のままで、operationFailure は AuthFailure になる [SMP-V18 #ccb1d4]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([
-          Right([_sampleA]),
-          const Left(Failure.auth()),
-        ]),
+    test(
+        'samples が AsyncData([A]) の状態で refresh を呼び、getSamples が AuthFailure を返した場合、'
+        'samples が AsyncData([A]) のままになり、operationFailure が AuthFailure になる '
+        '[SMP-V18 #ccb1d4]', () async {
+      final getSamples = FakeGetSamplesUseCase(
+        [Right([_sampleA]), const Left(Failure.auth())],
       );
-      await _waitUntilNotLoading(container);
-
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.refresh();
 
       final state = container.read(sampleViewModelProvider);
@@ -424,96 +463,131 @@ void main() {
       expect(state.operationFailure, const Failure.auth());
     });
 
-    test('samples が AsyncData([]) の状態で refresh を呼び、getSamples が「A」を返した場合、samples は AsyncData([A]) になる [SMP-V19 #e1bb86]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([
-          const Right([]),
-          Right([_sampleA]),
-        ]),
-      );
-      await _waitUntilNotLoading(container);
-
+    test(
+        'samples が AsyncData([]) の状態で refresh を呼び、getSamples が「A」を返した場合、'
+        'samples が AsyncData([A]) になる '
+        '[SMP-V19 #e1bb86]', () async {
+      final getSamples =
+          FakeGetSamplesUseCase([const Right([]), Right([_sampleA])]);
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.refresh();
 
       expect(container.read(sampleViewModelProvider).samples.value, [_sampleA]);
     });
 
-    test('samples が AsyncData([A]) の状態で refresh を呼び、読み込みが完了していない場合、samples は AsyncData([A]) のままである [SMP-V42 #e80659]', () async {
-      final getSamplesUseCase = FakeGetSamplesUseCase(
-        [Right([_sampleA]), Right([_sampleA])],
-        gatedIndexes: {1},
-      );
-      final container = _makeContainer(getSamplesUseCase: getSamplesUseCase);
-      await _waitUntilNotLoading(container);
-
+    test(
+        'samples が AsyncData([A]) の状態で refresh を呼び、読み込みが完了していない場合、'
+        'samples が AsyncData([A]) のままになる '
+        '[SMP-V42 #e80659]', () async {
+      final getSamples =
+          FakeGetSamplesUseCase([Right([_sampleA]), Right([_sampleA])]);
+      final container = _makeContainer(getSamplesUseCase: getSamples);
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
-      final refreshFuture = notifier.refresh();
 
-      // refresh() は一覧を表示できている間は samples を AsyncLoading にしない。
-      expect(container.read(sampleViewModelProvider).samples.value, [_sampleA]);
+      final future = notifier.refresh();
 
-      getSamplesUseCase.gates[1]!.complete();
-      await refreshFuture;
+      expect(
+        container.read(sampleViewModelProvider).samples.value,
+        [_sampleA],
+      );
+
+      await future;
     });
   });
 
   group('SampleViewModel.createSample', () {
-    test('samples が AsyncData([A]) の状態で createSample（name: 「B」）を呼び、createSample が「B」を返した場合、samples は AsyncData([A, B]) になり、createSample が userId u1、name 「B」で1回呼ばれる [SMP-V20 #ac3fa6]', () async {
-      final createUseCase = FakeCreateSampleUseCase(Right(_sampleB));
+    test(
+        'samples が AsyncData([A]) の状態で createSample（name: 「B」）を呼び、'
+        'createSample が「B」を返した場合、samples が AsyncData([A, B]) になり、'
+        'Repository の createSample が userId u1、name 「B」で1回呼ばれる '
+        '[SMP-V20 #ac3fa6]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA])]);
+      final create = FakeCreateSampleUseCase(Right(_sampleB));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA])]),
-        createSampleUseCase: createUseCase,
+        getSamplesUseCase: getSamples,
+        createSampleUseCase: create,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.createSample(name: 'B');
 
-      expect(container.read(sampleViewModelProvider).samples.value, [_sampleA, _sampleB]);
-      expect(createUseCase.calls, [(userId: 'u1', name: 'B')]);
+      final state = container.read(sampleViewModelProvider);
+      expect(state.samples.value, [_sampleA, _sampleB]);
+      expect(create.calledUserId, 'u1');
+      expect(create.calledName, 'B');
+      expect(create.callCount, 1);
     });
 
-    test('samples が AsyncData([]) の状態で createSample（name: 「B」）を呼び、createSample が「B」を返した場合、samples は AsyncData([B]) になり、createSample が userId u1、name 「B」で1回呼ばれる [SMP-V21 #74719e]', () async {
-      final createUseCase = FakeCreateSampleUseCase(Right(_sampleB));
+    test(
+        'samples が AsyncData([]) の状態で createSample（name: 「B」）を呼び、'
+        'createSample が「B」を返した場合、samples が AsyncData([B]) になり、'
+        'Repository の createSample が userId u1、name 「B」で1回呼ばれる '
+        '[SMP-V21 #74719e]', () async {
+      final getSamples = FakeGetSamplesUseCase([const Right([])]);
+      final create = FakeCreateSampleUseCase(Right(_sampleB));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([const Right([])]),
-        createSampleUseCase: createUseCase,
+        getSamplesUseCase: getSamples,
+        createSampleUseCase: create,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.createSample(name: 'B');
 
-      expect(container.read(sampleViewModelProvider).samples.value, [_sampleB]);
-      expect(createUseCase.calls, [(userId: 'u1', name: 'B')]);
+      final state = container.read(sampleViewModelProvider);
+      expect(state.samples.value, [_sampleB]);
+      expect(create.calledUserId, 'u1');
+      expect(create.calledName, 'B');
+      expect(create.callCount, 1);
     });
 
-    test('samples が AsyncData([A]) の状態で createSample（name: 「A」）を呼び、createSample が「A」と別の id を持つ新しいサンプル「A」を返した場合、samples は2件で、どちらの name も「A」、id は互いに異なる [SMP-V22 #ba49ae]', () async {
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA])]),
-        createSampleUseCase: FakeCreateSampleUseCase(Right(_sampleA2)),
+    test(
+        'samples が AsyncData([A]) の状態で createSample（name: 「A」）を呼び、'
+        'createSample が「A」と別の id を持つ新しいサンプル「A」を返した場合、'
+        'samples は2件で、どちらの name も「A」、id は互いに異なる '
+        '[SMP-V22 #ba49ae]', () async {
+      final newA = Sample(
+        id: 'sample-a2',
+        name: 'A',
+        createdAt: DateTime(2024, 1, 4),
+        updatedAt: DateTime(2024, 1, 4),
       );
-      await _waitUntilNotLoading(container);
-
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA])]);
+      final create = FakeCreateSampleUseCase(Right(newA));
+      final container = _makeContainer(
+        getSamplesUseCase: getSamples,
+        createSampleUseCase: create,
+      );
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.createSample(name: 'A');
 
       final samples = container.read(sampleViewModelProvider).samples.value!;
       expect(samples.length, 2);
       expect(samples.every((s) => s.name == 'A'), isTrue);
-      expect(samples[0].id == samples[1].id, isFalse);
+      expect(samples[0].id, isNot(samples[1].id));
     });
 
-    test('samples が AsyncData([A]) の状態で createSample（name: 「B」）を呼び、createSample が UnknownFailure を返した場合、samples は AsyncData([A]) のままで、operationFailure は UnknownFailure になる [SMP-V23 #0398ac]', () async {
+    test(
+        'samples が AsyncData([A]) の状態で createSample（name: 「B」）を呼び、'
+        'createSample が UnknownFailure を返した場合、samples が AsyncData([A]) のままになり、'
+        'operationFailure が UnknownFailure になる '
+        '[SMP-V23 #0398ac]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA])]);
+      final create = FakeCreateSampleUseCase(Left(Failure.unknown('boom')));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA])]),
-        createSampleUseCase:
-            FakeCreateSampleUseCase(const Left(Failure.unknown('boom'))),
+        getSamplesUseCase: getSamples,
+        createSampleUseCase: create,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.createSample(name: 'B');
 
       final state = container.read(sampleViewModelProvider);
@@ -521,15 +595,20 @@ void main() {
       expect(state.operationFailure, const Failure.unknown('boom'));
     });
 
-    test('samples が AsyncData([]) の状態で createSample（name: 「B」）を呼び、createSample が UnknownFailure を返した場合、samples は AsyncData([]) のままで、operationFailure は UnknownFailure になる [SMP-V24 #b8ebc4]', () async {
+    test(
+        'samples が AsyncData([]) の状態で createSample（name: 「B」）を呼び、'
+        'createSample が UnknownFailure を返した場合、samples が AsyncData([]) のままになり、'
+        'operationFailure が UnknownFailure になる '
+        '[SMP-V24 #b8ebc4]', () async {
+      final getSamples = FakeGetSamplesUseCase([const Right([])]);
+      final create = FakeCreateSampleUseCase(Left(Failure.unknown('boom')));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([const Right([])]),
-        createSampleUseCase:
-            FakeCreateSampleUseCase(const Left(Failure.unknown('boom'))),
+        getSamplesUseCase: getSamples,
+        createSampleUseCase: create,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.createSample(name: 'B');
 
       final state = container.read(sampleViewModelProvider);
@@ -537,15 +616,20 @@ void main() {
       expect(state.operationFailure, const Failure.unknown('boom'));
     });
 
-    test('samples が AsyncData([A]) の状態で createSample（name: 「B」）を呼び、createSample が NetworkFailure を返した場合、samples は AsyncData([A]) のままで、operationFailure は NetworkFailure になる [SMP-V25 #08063d]', () async {
+    test(
+        'samples が AsyncData([A]) の状態で createSample（name: 「B」）を呼び、'
+        'createSample が NetworkFailure を返した場合、samples が AsyncData([A]) のままになり、'
+        'operationFailure が NetworkFailure になる '
+        '[SMP-V25 #08063d]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA])]);
+      final create = FakeCreateSampleUseCase(const Left(Failure.network()));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA])]),
-        createSampleUseCase:
-            FakeCreateSampleUseCase(const Left(Failure.network())),
+        getSamplesUseCase: getSamples,
+        createSampleUseCase: create,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.createSample(name: 'B');
 
       final state = container.read(sampleViewModelProvider);
@@ -553,14 +637,20 @@ void main() {
       expect(state.operationFailure, const Failure.network());
     });
 
-    test('samples が AsyncData([A]) の状態で createSample（name: 「B」）を呼び、createSample が AuthFailure を返した場合、samples は AsyncData([A]) のままで、operationFailure は AuthFailure になる [SMP-V26 #37e03f]', () async {
+    test(
+        'samples が AsyncData([A]) の状態で createSample（name: 「B」）を呼び、'
+        'createSample が AuthFailure を返した場合、samples が AsyncData([A]) のままになり、'
+        'operationFailure が AuthFailure になる '
+        '[SMP-V26 #37e03f]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA])]);
+      final create = FakeCreateSampleUseCase(const Left(Failure.auth()));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA])]),
-        createSampleUseCase: FakeCreateSampleUseCase(const Left(Failure.auth())),
+        getSamplesUseCase: getSamples,
+        createSampleUseCase: create,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.createSample(name: 'B');
 
       final state = container.read(sampleViewModelProvider);
@@ -570,38 +660,57 @@ void main() {
   });
 
   group('SampleViewModel.updateSample', () {
-    test('samples が AsyncData([A, B, C]) の状態で updateSample（sampleId: B の id、name: 「X」）を呼び、updateSample が B の id を持つ「X」を返した場合、samples は AsyncData([A, X, C]) になり、updateSample が userId u1、sampleId B の id、name 「X」で1回呼ばれる [SMP-V27 #703d7d]', () async {
-      final updatedB = _sampleB.copyWith(name: 'X');
-      final updateUseCase = FakeUpdateSampleUseCase(Right(updatedB));
-      final container = _makeContainer(
-        getSamplesUseCase:
-            FakeGetSamplesUseCase([Right([_sampleA, _sampleB, _sampleC])]),
-        updateSampleUseCase: updateUseCase,
+    test(
+        'samples が AsyncData([A, B, C]) の状態で updateSample（sampleId: Bのid、name: 「X」）を呼び、'
+        'updateSample が Bのid を持つ「X」を返した場合、samples が AsyncData([A, X, C]) になり、'
+        'Repository の updateSample が userId u1、sampleId Bのid、name 「X」で1回呼ばれる '
+        '[SMP-V27 #703d7d]', () async {
+      final updatedX = Sample(
+        id: _sampleB.id,
+        name: 'X',
+        createdAt: _sampleB.createdAt,
+        updatedAt: DateTime(2024, 1, 5),
       );
-      await _waitUntilNotLoading(container);
-
+      final getSamples =
+          FakeGetSamplesUseCase([Right([_sampleA, _sampleB, _sampleC])]);
+      final update = FakeUpdateSampleUseCase(Right(updatedX));
+      final container = _makeContainer(
+        getSamplesUseCase: getSamples,
+        updateSampleUseCase: update,
+      );
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.updateSample(sampleId: _sampleB.id, name: 'X');
 
-      expect(
-        container.read(sampleViewModelProvider).samples.value,
-        [_sampleA, updatedB, _sampleC],
-      );
-      expect(
-        updateUseCase.calls,
-        [(userId: 'u1', sampleId: _sampleB.id, name: 'X')],
-      );
+      final state = container.read(sampleViewModelProvider);
+      expect(state.samples.value, [_sampleA, updatedX, _sampleC]);
+      expect(update.calledUserId, 'u1');
+      expect(update.calledSampleId, _sampleB.id);
+      expect(update.calledName, 'X');
+      expect(update.callCount, 1);
     });
 
-    test('samples が AsyncData([A, B]) の状態で updateSample（sampleId: B の id、name: 「A」）を呼び、updateSample が B の id を持つ「A」を返した場合、samples は2件で、上から A の id の「A」、B の id の「A」になる [SMP-V28 #4211b1]', () async {
-      final updatedB = _sampleB.copyWith(name: 'A');
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]),
-        updateSampleUseCase: FakeUpdateSampleUseCase(Right(updatedB)),
+    test(
+        'samples が AsyncData([A, B]) の状態で updateSample（sampleId: Bのid、name: 「A」）を呼び、'
+        'updateSample が Bのid を持つ「A」を返した場合、samples は2件で、'
+        '上から Aのidの「A」、Bのidの「A」になる '
+        '[SMP-V28 #4211b1]', () async {
+      final updatedA = Sample(
+        id: _sampleB.id,
+        name: 'A',
+        createdAt: _sampleB.createdAt,
+        updatedAt: DateTime(2024, 1, 5),
       );
-      await _waitUntilNotLoading(container);
-
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final update = FakeUpdateSampleUseCase(Right(updatedA));
+      final container = _makeContainer(
+        getSamplesUseCase: getSamples,
+        updateSampleUseCase: update,
+      );
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.updateSample(sampleId: _sampleB.id, name: 'A');
 
       final samples = container.read(sampleViewModelProvider).samples.value!;
@@ -612,32 +721,47 @@ void main() {
       expect(samples[1].name, 'A');
     });
 
-    test('samples が AsyncData([A]) の状態で updateSample（sampleId: A の id、name: 「A」）を呼び、updateSample が A の id を持つ「A」を返した場合、samples は1件で、A の id の「A」になる [SMP-V29 #4b8c44]', () async {
-      final updatedA = _sampleA.copyWith(name: 'A');
-      final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA])]),
-        updateSampleUseCase: FakeUpdateSampleUseCase(Right(updatedA)),
+    test(
+        'samples が AsyncData([A]) の状態で updateSample（sampleId: Aのid、name: 「A」）を呼び、'
+        'updateSample が Aのid を持つ「A」を返した場合、samples は1件で Aのidの「A」になる '
+        '[SMP-V29 #4b8c44]', () async {
+      final updatedA = Sample(
+        id: _sampleA.id,
+        name: 'A',
+        createdAt: _sampleA.createdAt,
+        updatedAt: DateTime(2024, 1, 5),
       );
-      await _waitUntilNotLoading(container);
-
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA])]);
+      final update = FakeUpdateSampleUseCase(Right(updatedA));
+      final container = _makeContainer(
+        getSamplesUseCase: getSamples,
+        updateSampleUseCase: update,
+      );
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.updateSample(sampleId: _sampleA.id, name: 'A');
 
       final samples = container.read(sampleViewModelProvider).samples.value!;
       expect(samples.length, 1);
-      expect(samples[0].id, _sampleA.id);
-      expect(samples[0].name, 'A');
+      expect(samples.single.id, _sampleA.id);
+      expect(samples.single.name, 'A');
     });
 
-    test('samples が AsyncData([A, B]) の状態で updateSample（sampleId: B の id、name: 「X」）を呼び、updateSample が UnknownFailure を返した場合、samples は AsyncData([A, B]) のままで、operationFailure は UnknownFailure になる [SMP-V30 #f37e41]', () async {
+    test(
+        'samples が AsyncData([A, B]) の状態で updateSample（sampleId: Bのid、name: 「X」）を呼び、'
+        'updateSample が UnknownFailure を返した場合、samples が AsyncData([A, B]) のままになり、'
+        'operationFailure が UnknownFailure になる '
+        '[SMP-V30 #f37e41]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final update = FakeUpdateSampleUseCase(Left(Failure.unknown('boom')));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]),
-        updateSampleUseCase:
-            FakeUpdateSampleUseCase(const Left(Failure.unknown('boom'))),
+        getSamplesUseCase: getSamples,
+        updateSampleUseCase: update,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.updateSample(sampleId: _sampleB.id, name: 'X');
 
       final state = container.read(sampleViewModelProvider);
@@ -645,15 +769,20 @@ void main() {
       expect(state.operationFailure, const Failure.unknown('boom'));
     });
 
-    test('samples が AsyncData([A, B]) の状態で updateSample（sampleId: B の id、name: 「X」）を呼び、updateSample が NotFoundFailure を返した場合、samples は AsyncData([A, B]) のままで、operationFailure は NotFoundFailure になる [SMP-V31 #3fdfbf]', () async {
+    test(
+        'samples が AsyncData([A, B]) の状態で updateSample（sampleId: Bのid、name: 「X」）を呼び、'
+        'updateSample が NotFoundFailure を返した場合、samples が AsyncData([A, B]) のままになり、'
+        'operationFailure が NotFoundFailure になる '
+        '[SMP-V31 #3fdfbf]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final update = FakeUpdateSampleUseCase(const Left(Failure.notFound()));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]),
-        updateSampleUseCase:
-            FakeUpdateSampleUseCase(const Left(Failure.notFound())),
+        getSamplesUseCase: getSamples,
+        updateSampleUseCase: update,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.updateSample(sampleId: _sampleB.id, name: 'X');
 
       final state = container.read(sampleViewModelProvider);
@@ -661,15 +790,20 @@ void main() {
       expect(state.operationFailure, const Failure.notFound());
     });
 
-    test('samples が AsyncData([A, B]) の状態で updateSample（sampleId: B の id、name: 「X」）を呼び、updateSample が NetworkFailure を返した場合、samples は AsyncData([A, B]) のままで、operationFailure は NetworkFailure になる [SMP-V32 #1c4b53]', () async {
+    test(
+        'samples が AsyncData([A, B]) の状態で updateSample（sampleId: Bのid、name: 「X」）を呼び、'
+        'updateSample が NetworkFailure を返した場合、samples が AsyncData([A, B]) のままになり、'
+        'operationFailure が NetworkFailure になる '
+        '[SMP-V32 #1c4b53]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final update = FakeUpdateSampleUseCase(const Left(Failure.network()));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]),
-        updateSampleUseCase:
-            FakeUpdateSampleUseCase(const Left(Failure.network())),
+        getSamplesUseCase: getSamples,
+        updateSampleUseCase: update,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.updateSample(sampleId: _sampleB.id, name: 'X');
 
       final state = container.read(sampleViewModelProvider);
@@ -677,14 +811,20 @@ void main() {
       expect(state.operationFailure, const Failure.network());
     });
 
-    test('samples が AsyncData([A, B]) の状態で updateSample（sampleId: B の id、name: 「X」）を呼び、updateSample が AuthFailure を返した場合、samples は AsyncData([A, B]) のままで、operationFailure は AuthFailure になる [SMP-V33 #b2d978]', () async {
+    test(
+        'samples が AsyncData([A, B]) の状態で updateSample（sampleId: Bのid、name: 「X」）を呼び、'
+        'updateSample が AuthFailure を返した場合、samples が AsyncData([A, B]) のままになり、'
+        'operationFailure が AuthFailure になる '
+        '[SMP-V33 #b2d978]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final update = FakeUpdateSampleUseCase(const Left(Failure.auth()));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]),
-        updateSampleUseCase: FakeUpdateSampleUseCase(const Left(Failure.auth())),
+        getSamplesUseCase: getSamples,
+        updateSampleUseCase: update,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.updateSample(sampleId: _sampleB.id, name: 'X');
 
       final state = container.read(sampleViewModelProvider);
@@ -694,88 +834,113 @@ void main() {
   });
 
   group('SampleViewModel.deleteSample', () {
-    test('samples が AsyncData([A, B]) の状態で deleteSample（sampleId: A の id）を呼び、deleteSample が成功し、その後の getSamples が「B」を返した場合、samples は AsyncData([B]) になり、deleteSample が userId u1、sampleId A の id で1回呼ばれる [SMP-V34 #334f2e]', () async {
-      final getSamplesUseCase =
+    test(
+        'samples が AsyncData([A, B]) の状態で deleteSample（sampleId: Aのid）を呼び、'
+        'deleteSample が成功し、その後の getSamples が「B」を返した場合、samples が AsyncData([B]) になり、'
+        'Repository の deleteSample が userId u1、sampleId Aのidで1回呼ばれる '
+        '[SMP-V34 #334f2e]', () async {
+      final getSamples =
           FakeGetSamplesUseCase([Right([_sampleA, _sampleB]), Right([_sampleB])]);
-      final deleteUseCase = FakeDeleteSampleUseCase(const Right(unit));
+      final delete = FakeDeleteSampleUseCase(const Right(unit));
       final container = _makeContainer(
-        getSamplesUseCase: getSamplesUseCase,
-        deleteSampleUseCase: deleteUseCase,
+        getSamplesUseCase: getSamples,
+        deleteSampleUseCase: delete,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
-      await notifier.deleteSample(sampleId: _sampleA.id);
-      await _waitUntil(() => getSamplesUseCase.callCount >= 2);
 
-      expect(container.read(sampleViewModelProvider).samples.value, [_sampleB]);
-      expect(deleteUseCase.calls, [(userId: 'u1', sampleId: _sampleA.id)]);
+      await notifier.deleteSample(sampleId: _sampleA.id);
+      await _flush();
+
+      final state = container.read(sampleViewModelProvider);
+      expect(state.samples.value, [_sampleB]);
+      expect(delete.calledUserId, 'u1');
+      expect(delete.calledSampleId, _sampleA.id);
+      expect(delete.callCount, 1);
     });
 
-    test('samples が AsyncData([A, B, C]) の状態で deleteSample（sampleId: B の id）を呼び、deleteSample が成功し、その後の getSamples が「A」「C」を返した場合、samples は AsyncData([A, C]) になる [SMP-V35 #7baf62]', () async {
-      final getSamplesUseCase = FakeGetSamplesUseCase([
+    test(
+        'samples が AsyncData([A, B, C]) の状態で deleteSample（sampleId: Bのid）を呼び、'
+        'deleteSample が成功し、その後の getSamples が「A」「C」を返した場合、samples が AsyncData([A, C]) になる '
+        '[SMP-V35 #7baf62]', () async {
+      final getSamples = FakeGetSamplesUseCase([
         Right([_sampleA, _sampleB, _sampleC]),
         Right([_sampleA, _sampleC]),
       ]);
+      final delete = FakeDeleteSampleUseCase(const Right(unit));
       final container = _makeContainer(
-        getSamplesUseCase: getSamplesUseCase,
-        deleteSampleUseCase: FakeDeleteSampleUseCase(const Right(unit)),
+        getSamplesUseCase: getSamples,
+        deleteSampleUseCase: delete,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
-      await notifier.deleteSample(sampleId: _sampleB.id);
-      await _waitUntil(() => getSamplesUseCase.callCount >= 2);
 
-      expect(container.read(sampleViewModelProvider).samples.value, [_sampleA, _sampleC]);
+      await notifier.deleteSample(sampleId: _sampleB.id);
+      await _flush();
+
+      expect(
+        container.read(sampleViewModelProvider).samples.value,
+        [_sampleA, _sampleC],
+      );
     });
 
-    test('samples が AsyncData([A]) の状態で deleteSample（sampleId: A の id）を呼び、deleteSample が成功し、その後の getSamples が空の一覧を返した場合、samples は AsyncData([]) になる [SMP-V36 #e9b1d5]', () async {
-      final getSamplesUseCase = FakeGetSamplesUseCase([
-        Right([_sampleA]),
-        const Right([]),
-      ]);
+    test(
+        'samples が AsyncData([A]) の状態で deleteSample（sampleId: Aのid）を呼び、'
+        'deleteSample が成功し、その後の getSamples が空の一覧を返した場合、samples が AsyncData([]) になる '
+        '[SMP-V36 #e9b1d5]', () async {
+      final getSamples =
+          FakeGetSamplesUseCase([Right([_sampleA]), const Right([])]);
+      final delete = FakeDeleteSampleUseCase(const Right(unit));
       final container = _makeContainer(
-        getSamplesUseCase: getSamplesUseCase,
-        deleteSampleUseCase: FakeDeleteSampleUseCase(const Right(unit)),
+        getSamplesUseCase: getSamples,
+        deleteSampleUseCase: delete,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.deleteSample(sampleId: _sampleA.id);
-      await _waitUntil(() => getSamplesUseCase.callCount >= 2);
+      await _flush();
 
       expect(container.read(sampleViewModelProvider).samples.value, isEmpty);
     });
 
-    test('samples が AsyncData([A, B]) で、Repository 上では A が既に削除されている状態で deleteSample（sampleId: A の id）を呼び、deleteSample が成功し、その後の getSamples が「B」を返した場合、samples は AsyncData([B]) になり、operationFailure は null になる [SMP-V37 #012201]', () async {
-      final getSamplesUseCase =
+    test(
+        'samples が AsyncData([A, B])（Repository上ではAが既に削除されている）の状態で '
+        'deleteSample（sampleId: Aのid）を呼び、deleteSample が成功し、その後の getSamples が「B」を返した場合、'
+        'samples が AsyncData([B]) になり、operationFailure が null になる '
+        '[SMP-V37 #012201]', () async {
+      final getSamples =
           FakeGetSamplesUseCase([Right([_sampleA, _sampleB]), Right([_sampleB])]);
+      final delete = FakeDeleteSampleUseCase(const Right(unit));
       final container = _makeContainer(
-        getSamplesUseCase: getSamplesUseCase,
-        // 削除対象が既に存在しない場合も、リポジトリ契約（SMP-R12）どおり成功として扱われる。
-        deleteSampleUseCase: FakeDeleteSampleUseCase(const Right(unit)),
+        getSamplesUseCase: getSamples,
+        deleteSampleUseCase: delete,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.deleteSample(sampleId: _sampleA.id);
-      await _waitUntil(() => getSamplesUseCase.callCount >= 2);
+      await _flush();
 
       final state = container.read(sampleViewModelProvider);
       expect(state.samples.value, [_sampleB]);
       expect(state.operationFailure, isNull);
     });
 
-    test('samples が AsyncData([A, B]) の状態で deleteSample（sampleId: A の id）を呼び、deleteSample が UnknownFailure を返した場合、samples は AsyncData([A, B]) のままで、operationFailure は UnknownFailure になる [SMP-V38 #b32133]', () async {
+    test(
+        'samples が AsyncData([A, B]) の状態で deleteSample（sampleId: Aのid）を呼び、'
+        'deleteSample が UnknownFailure を返した場合、samples が AsyncData([A, B]) のままになり、'
+        'operationFailure が UnknownFailure になる '
+        '[SMP-V38 #b32133]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final delete = FakeDeleteSampleUseCase(Left(Failure.unknown('boom')));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]),
-        deleteSampleUseCase:
-            FakeDeleteSampleUseCase(const Left(Failure.unknown('boom'))),
+        getSamplesUseCase: getSamples,
+        deleteSampleUseCase: delete,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.deleteSample(sampleId: _sampleA.id);
 
       final state = container.read(sampleViewModelProvider);
@@ -783,15 +948,20 @@ void main() {
       expect(state.operationFailure, const Failure.unknown('boom'));
     });
 
-    test('samples が AsyncData([A, B]) の状態で deleteSample（sampleId: A の id）を呼び、deleteSample が NotFoundFailure を返した場合、samples は AsyncData([A, B]) のままで、operationFailure は NotFoundFailure になる [SMP-V39 #da4019]', () async {
+    test(
+        'samples が AsyncData([A, B]) の状態で deleteSample（sampleId: Aのid）を呼び、'
+        'deleteSample が NotFoundFailure を返した場合、samples が AsyncData([A, B]) のままになり、'
+        'operationFailure が NotFoundFailure になる '
+        '[SMP-V39 #da4019]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final delete = FakeDeleteSampleUseCase(const Left(Failure.notFound()));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]),
-        deleteSampleUseCase:
-            FakeDeleteSampleUseCase(const Left(Failure.notFound())),
+        getSamplesUseCase: getSamples,
+        deleteSampleUseCase: delete,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.deleteSample(sampleId: _sampleA.id);
 
       final state = container.read(sampleViewModelProvider);
@@ -799,15 +969,20 @@ void main() {
       expect(state.operationFailure, const Failure.notFound());
     });
 
-    test('samples が AsyncData([A, B]) の状態で deleteSample（sampleId: A の id）を呼び、deleteSample が NetworkFailure を返した場合、samples は AsyncData([A, B]) のままで、operationFailure は NetworkFailure になる [SMP-V40 #75c7ef]', () async {
+    test(
+        'samples が AsyncData([A, B]) の状態で deleteSample（sampleId: Aのid）を呼び、'
+        'deleteSample が NetworkFailure を返した場合、samples が AsyncData([A, B]) のままになり、'
+        'operationFailure が NetworkFailure になる '
+        '[SMP-V40 #75c7ef]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final delete = FakeDeleteSampleUseCase(const Left(Failure.network()));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]),
-        deleteSampleUseCase:
-            FakeDeleteSampleUseCase(const Left(Failure.network())),
+        getSamplesUseCase: getSamples,
+        deleteSampleUseCase: delete,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.deleteSample(sampleId: _sampleA.id);
 
       final state = container.read(sampleViewModelProvider);
@@ -815,46 +990,60 @@ void main() {
       expect(state.operationFailure, const Failure.network());
     });
 
-    test('samples が AsyncData([A, B]) の状態で deleteSample（sampleId: A の id）を呼び、deleteSample が AuthFailure を返した場合、samples は AsyncData([A, B]) のままで、operationFailure は AuthFailure になる [SMP-V41 #a205ef]', () async {
+    test(
+        'samples が AsyncData([A, B]) の状態で deleteSample（sampleId: Aのid）を呼び、'
+        'deleteSample が AuthFailure を返した場合、samples が AsyncData([A, B]) のままになり、'
+        'operationFailure が AuthFailure になる '
+        '[SMP-V41 #a205ef]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final delete = FakeDeleteSampleUseCase(const Left(Failure.auth()));
       final container = _makeContainer(
-        getSamplesUseCase: FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]),
-        deleteSampleUseCase: FakeDeleteSampleUseCase(const Left(Failure.auth())),
+        getSamplesUseCase: getSamples,
+        deleteSampleUseCase: delete,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       await notifier.deleteSample(sampleId: _sampleA.id);
 
       final state = container.read(sampleViewModelProvider);
       expect(state.samples.value, [_sampleA, _sampleB]);
       expect(state.operationFailure, const Failure.auth());
     });
+  });
 
-    test('samples が AsyncData([A, B]) の状態で deleteSample（sampleId: A の id）を呼び、その完了前に createSample（name: 「C」）を呼んで、createSample が「C」を返し、deleteSample が成功し、削除後の getSamples が「B」「C」を返した場合、両方の完了後 samples は AsyncData([B, C]) になる [SMP-V43 #ab4762]', () async {
-      final getSamplesUseCase = FakeGetSamplesUseCase([
-        Right([_sampleA, _sampleB]),
-        Right([_sampleB, _sampleC]),
-      ]);
-      final deleteGate = Completer<void>();
-      final deleteUseCase =
-          FakeDeleteSampleUseCase(const Right(unit), gate: deleteGate);
-      final createUseCase = FakeCreateSampleUseCase(Right(_sampleC));
+  group('SampleViewModel 同時実行（revisionガードによる古い読み取りの破棄）', () {
+    test(
+        'samples が AsyncData([A, B]) の状態で deleteSample（sampleId: Aのid）を呼び、'
+        'その完了前に createSample（name: 「C」）を呼んで、createSample が「C」を返し、'
+        'deleteSample が成功し、削除後の getSamples が「B」「C」を返した場合、'
+        '両方の完了後、samples が AsyncData([B, C]) になる '
+        '[SMP-V43 #ab4762]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final create = FakeCreateSampleUseCase(); // 手動で解決する
+      final delete = FakeDeleteSampleUseCase(); // 手動で解決する
       final container = _makeContainer(
-        getSamplesUseCase: getSamplesUseCase,
-        createSampleUseCase: createUseCase,
-        deleteSampleUseCase: deleteUseCase,
+        getSamplesUseCase: getSamples,
+        createSampleUseCase: create,
+        deleteSampleUseCase: delete,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
-      final deleteFuture = notifier.deleteSample(sampleId: _sampleA.id);
-      // deleteSample はまだ deleteGate 待ちで完了していない。先に createSample を完了させる
-      // （SMP-V43 の条件「その完了前に createSample を呼んで、createSample が先に完了する」を作るための順序制御）。
-      await notifier.createSample(name: 'C');
 
-      deleteGate.complete();
+      final deleteFuture = notifier.deleteSample(sampleId: _sampleA.id);
+      final createFuture = notifier.createSample(name: 'C');
+
+      // createSample を先に完了させる
+      create.completer.complete(Right(_sampleC));
+      await createFuture;
+
+      // 続けて deleteSample を完了させる（内部で refresh が走り、getSamples の2回目の呼び出しが登録される）
+      delete.completer.complete(const Right(unit));
       await deleteFuture;
-      await _waitUntil(() => getSamplesUseCase.callCount >= 2);
+
+      // 削除後の getSamples（2回目の呼び出し）に「B」「C」を解決する
+      getSamples.pending[1].complete(Right([_sampleB, _sampleC]));
+      await _flush();
 
       expect(
         container.read(sampleViewModelProvider).samples.value,
@@ -862,43 +1051,42 @@ void main() {
       );
     });
 
-    test('samples が AsyncData([A, B]) の状態で deleteSample（sampleId: A の id）を呼び、その完了前に refresh を呼んで、refresh の getSamples が「A」「B」を、削除後の getSamples が「B」を返し、refresh の方が後に完了した場合、両方の完了後 samples は AsyncData([B]) になる [SMP-V44 #3c8a70]', () async {
-      final getSamplesUseCase = FakeGetSamplesUseCase(
-        [
-          Right([_sampleA, _sampleB]), // build
-          Right([_sampleA, _sampleB]), // 手動 refresh（後に完了するが古いので無視される）
-          Right([_sampleB]), // 削除起因の refresh（先に完了する）
-        ],
-        gatedIndexes: {1, 2},
-      );
-      final deleteUseCase = FakeDeleteSampleUseCase(const Right(unit));
+    test(
+        'samples が AsyncData([A, B]) の状態で deleteSample（sampleId: Aのid）を呼び、'
+        'その完了前に refresh を呼んで、refresh の getSamples が「A」「B」を、'
+        '削除後の getSamples が「B」を返し、refresh の方が後に完了した場合、'
+        '両方の完了後、samples が AsyncData([B]) になる '
+        '[SMP-V44 #3c8a70]', () async {
+      final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
+      final delete = FakeDeleteSampleUseCase(); // 手動で解決する
       final container = _makeContainer(
-        getSamplesUseCase: getSamplesUseCase,
-        deleteSampleUseCase: deleteUseCase,
+        getSamplesUseCase: getSamples,
+        deleteSampleUseCase: delete,
       );
-      await _waitUntilNotLoading(container);
-
+      await _flush();
       final notifier = container.read(sampleViewModelProvider.notifier);
+
       final deleteFuture = notifier.deleteSample(sampleId: _sampleA.id);
+      // 明示的な refresh（getSamples の2回目の呼び出し = pending[1]）
       final refreshFuture = notifier.refresh();
 
-      // delete が完了し、削除起因の refresh が getSamples を呼ぶまで待つ（呼び出し順で2件目）。
-      await _waitUntil(() => getSamplesUseCase.callCount >= 3);
-
-      // 削除起因の refresh（3件目の呼び出し）を先に完了させる
-      // （SMP-V44 の条件「refresh の方が後に完了した」を作るための順序制御。中間状態は検証しない）。
-      getSamplesUseCase.gates[2]!.complete();
-      await _waitUntil(
-        () => container.read(sampleViewModelProvider).samples.value?.length == 1,
-      );
-
-      // 手動 refresh（2件目の呼び出し）を後から完了させる。revision が古いため無視される。
-      getSamplesUseCase.gates[1]!.complete();
-      await refreshFuture;
+      // 削除を先に完了させる（内部の refresh で getSamples の3回目の呼び出し = pending[2] が登録される）
+      delete.completer.complete(const Right(unit));
       await deleteFuture;
-      await Future<void>.delayed(Duration.zero);
 
-      expect(container.read(sampleViewModelProvider).samples.value, [_sampleB]);
+      // 削除後の getSamples（3回目の呼び出し）が先に完了する
+      getSamples.pending[2].complete(Right([_sampleB]));
+      await _flush();
+
+      // 明示的な refresh の getSamples（2回目の呼び出し）が後から完了する（古い読み取りとして捨てられる）
+      getSamples.pending[1].complete(Right([_sampleA, _sampleB]));
+      await _flush();
+      await refreshFuture;
+
+      expect(
+        container.read(sampleViewModelProvider).samples.value,
+        [_sampleB],
+      );
     });
   });
 }
