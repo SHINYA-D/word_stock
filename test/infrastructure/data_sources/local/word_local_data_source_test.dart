@@ -337,4 +337,200 @@ void main() {
       );
     });
   });
+
+  group('日時の保存形式', () {
+    test('insertした場合、DBに保存されるcreatedAt/updatedAtがUTCのISO8601文字列(末尾Z)になる',
+        () async {
+      await dataSource.insert(
+        makeWord(
+          'word-1',
+          createdAt: DateTime(2024, 3, 5, 10, 30),
+          updatedAt: DateTime(2024, 3, 6, 11, 45),
+        ),
+        userId: userId,
+        folderId: 'folder-1',
+      );
+
+      final db = await dbHelper.database;
+      final rows = await db.query(
+        WordTable.tableName,
+        where: 'id = ?',
+        whereArgs: ['word-1'],
+      );
+
+      expect(rows.single['createdAt'], endsWith('Z'));
+      expect(rows.single['updatedAt'], endsWith('Z'));
+    });
+
+    test('Zの無いバージョン1形式の文字列が保存されている場合、端末のタイムゾーンの時刻として読み出せる', () async {
+      await dataSource.insert(makeWord('word-1'),
+          userId: userId, folderId: 'folder-1');
+      final db = await dbHelper.database;
+      final legacyLocal = DateTime(2024, 3, 5, 10, 30);
+      // 末尾Zを持たない旧バージョン1形式の文字列を直接書き込む。
+      await db.update(
+        WordTable.tableName,
+        {'createdAt': legacyLocal.toIso8601String()},
+        where: 'id = ?',
+        whereArgs: ['word-1'],
+      );
+
+      final found = await dataSource.findById('word-1');
+
+      expect(found!.createdAt, legacyLocal);
+    });
+  });
+
+  group('findById（削除済みを含む）', () {
+    test('deletedAtが設定された単語を指定した場合、findByIdは削除済みでも取得できる', () async {
+      await dataSource.insert(makeWord('word-1'),
+          userId: userId, folderId: 'folder-1');
+      final db = await dbHelper.database;
+      await dataSource.markDeleted(db, 'word-1', DateTime(2024, 4, 1));
+
+      final found = await dataSource.findById('word-1');
+
+      expect(found, isNotNull);
+      expect(found!.id, 'word-1');
+    });
+  });
+
+  group('findByFolderId（削除済みの除外）', () {
+    test('deletedAtが設定された単語が存在する場合、findByFolderIdの結果に含まれない', () async {
+      await dataSource.insert(makeWord('word-1'),
+          userId: userId, folderId: 'folder-1');
+      await dataSource.insert(makeWord('word-2'),
+          userId: userId, folderId: 'folder-1');
+      final db = await dbHelper.database;
+      await dataSource.markDeleted(db, 'word-1', DateTime(2024, 4, 1));
+
+      final results =
+          await dataSource.findByFolderId('folder-1', userId: userId);
+
+      expect(results.map((w) => w.id), ['word-2']);
+    });
+  });
+
+  group('findActive', () {
+    test('自ユーザーの未削除の単語を指定した場合、その単語が取得できる', () async {
+      await dataSource.insert(makeWord('word-1'),
+          userId: userId, folderId: 'folder-1');
+      final db = await dbHelper.database;
+
+      final found =
+          await dataSource.findActive(db, 'word-1', userId: userId);
+
+      expect(found, isNotNull);
+      expect(found!.id, 'word-1');
+    });
+
+    test('削除済みの単語を指定した場合、findActiveはnullを返す', () async {
+      await dataSource.insert(makeWord('word-1'),
+          userId: userId, folderId: 'folder-1');
+      final db = await dbHelper.database;
+      await dataSource.markDeleted(db, 'word-1', DateTime(2024, 4, 1));
+
+      final found =
+          await dataSource.findActive(db, 'word-1', userId: userId);
+
+      expect(found, isNull);
+    });
+
+    test('他ユーザーの単語を指定した場合、findActiveはnullを返す', () async {
+      await dataSource.insert(makeWord('word-1'),
+          userId: 'other-user', folderId: 'folder-1');
+      final db = await dbHelper.database;
+
+      final found =
+          await dataSource.findActive(db, 'word-1', userId: userId);
+
+      expect(found, isNull);
+    });
+  });
+
+  group('findActiveIdsByFolder', () {
+    test('未削除の単語のみが存在する場合、それらのidが取得できる', () async {
+      await dataSource.insert(makeWord('word-1'),
+          userId: userId, folderId: 'folder-1');
+      await dataSource.insert(makeWord('word-2'),
+          userId: userId, folderId: 'folder-1');
+      final db = await dbHelper.database;
+      await dataSource.markDeleted(db, 'word-2', DateTime(2024, 4, 1));
+
+      final ids = await dataSource.findActiveIdsByFolder(
+        db,
+        'folder-1',
+        userId: userId,
+      );
+
+      expect(ids, ['word-1']);
+    });
+
+    test('他ユーザーの単語が存在する場合、そのidは含まれない', () async {
+      await dataSource.insert(makeWord('word-1'),
+          userId: 'other-user', folderId: 'folder-1');
+      final db = await dbHelper.database;
+
+      final ids = await dataSource.findActiveIdsByFolder(
+        db,
+        'folder-1',
+        userId: userId,
+      );
+
+      expect(ids, isEmpty);
+    });
+  });
+
+  group('save', () {
+    test('未登録の単語をsaveした場合、新規レコードとして挿入される', () async {
+      final db = await dbHelper.database;
+
+      await dataSource.save(db, makeWord('word-1'),
+          userId: userId, folderId: 'folder-1');
+
+      final found = await dataSource.findById('word-1');
+      expect(found, isNotNull);
+      expect(found!.id, 'word-1');
+    });
+
+    test('既存IDの単語をsaveした場合、レコードが置き換えられる（重複せず1件のまま）', () async {
+      final db = await dbHelper.database;
+      await dataSource.save(db, makeWord('word-1', front: '旧'),
+          userId: userId, folderId: 'folder-1');
+
+      await dataSource.save(
+        db,
+        makeWord('word-1', front: '新'),
+        userId: userId,
+        folderId: 'folder-1',
+      );
+
+      final results =
+          await dataSource.findByFolderId('folder-1', userId: userId);
+      expect(results.length, 1);
+      expect(results.first.front, '新');
+    });
+  });
+
+  group('markDeleted', () {
+    test('存在する単語をmarkDeletedした場合、deletedAtとupdatedAtに指定時刻が入りpendingになる',
+        () async {
+      await dataSource.insert(makeWord('word-1'),
+          userId: userId, folderId: 'folder-1');
+      final db = await dbHelper.database;
+      final deletedAt = DateTime(2024, 4, 1, 9, 0);
+
+      await dataSource.markDeleted(db, 'word-1', deletedAt);
+
+      final rows = await db.query(
+        WordTable.tableName,
+        where: 'id = ?',
+        whereArgs: ['word-1'],
+      );
+      final row = rows.single;
+      expect(row['syncStatus'], 'pending');
+      final found = await dataSource.findById('word-1');
+      expect(found!.updatedAt, deletedAt);
+    });
+  });
 }

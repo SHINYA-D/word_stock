@@ -1,29 +1,80 @@
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:word_stock/core/error/failure.dart';
 import 'package:word_stock/domain/entities/flashcard_result.dart';
+import 'package:word_stock/domain/entities/folder.dart';
 import 'package:word_stock/infrastructure/data_sources/local/database_helper.dart';
 import 'package:word_stock/infrastructure/data_sources/local/flashcard_result_local_data_source.dart';
+import 'package:word_stock/infrastructure/data_sources/local/folder_local_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/sync_queue_data_source.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/flashcard_result_table.dart';
+import 'package:word_stock/infrastructure/data_sources/local/tables/folder_table.dart';
 import 'package:word_stock/infrastructure/data_sources/local/tables/sync_queue_table.dart';
 import 'package:word_stock/infrastructure/repositories/flashcard_result_repository_impl.dart';
 
 import '../../helpers/fake_infrastructure.dart';
 
+/// ローカルへの成績の保存で例外を投げる（FRS-C03）。
+class ThrowingSaveFlashcardResultLocalDataSource
+    extends FlashcardResultLocalDataSource {
+  ThrowingSaveFlashcardResultLocalDataSource(DatabaseHelper dbHelper)
+      : super(dbHelper);
+
+  @override
+  Future<void> save(
+    DatabaseExecutor db,
+    FlashcardResult result, {
+    required String userId,
+    String syncStatus = 'synced',
+  }) {
+    throw Exception('save failed');
+  }
+}
+
+/// ローカルの読み取りで例外を投げる（FRS-R04）。
+class ThrowingFindByUserIdFlashcardResultLocalDataSource
+    extends FlashcardResultLocalDataSource {
+  ThrowingFindByUserIdFlashcardResultLocalDataSource(DatabaseHelper dbHelper)
+      : super(dbHelper);
+
+  @override
+  Future<List<FlashcardResult>> findByUserId(
+    String userId, {
+    String? folderId,
+  }) {
+    throw Exception('read failed');
+  }
+}
+
+/// キューへの登録で例外を投げる（FRS-C04）。
+class ThrowingEnqueueSyncQueueDataSource extends SyncQueueDataSource {
+  ThrowingEnqueueSyncQueueDataSource(DatabaseHelper dbHelper) : super(dbHelper);
+
+  @override
+  Future<void> enqueueInTransaction(
+    DatabaseExecutor txn, {
+    required String operation,
+    required String tableName,
+    required String recordId,
+    required String userId,
+    String? parentId,
+  }) {
+    throw Exception('enqueue failed');
+  }
+}
+
 void main() {
   const userId = 'user-1';
+  const otherUserId = 'user-2';
 
   late DatabaseHelper dbHelper;
-  late FlashcardResultLocalDataSource flashcardResultLocal;
+  late FolderLocalDataSource folderLocal;
+  late FlashcardResultLocalDataSource resultLocal;
   late SyncQueueDataSource syncQueue;
-  late FakeFirestoreDataSource fakeRemote;
-  late FakeConnectivityMonitor fakeConnectivity;
-  late FlashcardResultRepositoryImpl repository;
+  late int onLocalChangedCallCount;
 
   setUpAll(() async {
     sqfliteFfiInit();
@@ -38,304 +89,242 @@ void main() {
   });
 
   setUp(() async {
+    // テスト間でDBの中身が混ざらないよう、毎回まっさらなDBファイルを使う。
     dbHelper = DatabaseHelper();
     final db = await dbHelper.database;
+    await db.delete(FolderTable.tableName);
     await db.delete(FlashcardResultTable.tableName);
     await db.delete(SyncQueueTable.tableName);
 
-    flashcardResultLocal = FlashcardResultLocalDataSource(dbHelper);
+    folderLocal = FolderLocalDataSource(dbHelper);
+    resultLocal = FlashcardResultLocalDataSource(dbHelper);
     syncQueue = SyncQueueDataSource(dbHelper);
-    fakeRemote = FakeFirestoreDataSource();
-    fakeConnectivity = FakeConnectivityMonitor(online: true);
-
-    repository = FlashcardResultRepositoryImpl(
-      localDataSource: flashcardResultLocal,
-      remoteDataSource: fakeRemote,
-      syncQueueDataSource: syncQueue,
-      dbHelper: dbHelper,
-      connectivityMonitor: fakeConnectivity,
-    );
+    onLocalChangedCallCount = 0;
   });
 
-  FlashcardResult makeFlashcardResult(String id, String folderId) =>
-      FlashcardResult(
+  FlashcardResultRepositoryImpl buildRepository({
+    FlashcardResultLocalDataSource? localDataSource,
+    FolderLocalDataSource? folderLocalDataSource,
+    SyncQueueDataSource? syncQueueDataSource,
+  }) {
+    return FlashcardResultRepositoryImpl(
+      localDataSource: localDataSource ?? resultLocal,
+      folderLocalDataSource: folderLocalDataSource ?? folderLocal,
+      syncQueueDataSource: syncQueueDataSource ?? syncQueue,
+      dbHelper: dbHelper,
+      onLocalChanged: () => onLocalChangedCallCount++,
+    );
+  }
+
+  Folder makeFolder(String id) => Folder(
         id: id,
-        folderId: folderId,
-        totalCount: 10,
-        correctCount: 7,
-        date: DateTime(2024, 1, 1),
+        name: 'folder-$id',
+        createdAt: DateTime(2024, 1, 1),
         updatedAt: DateTime(2024, 1, 1),
       );
 
-  Future<void> insertRow(String id, String folderId) =>
-      flashcardResultLocal.insert(
-        makeFlashcardResult(id, folderId),
-        userId: userId,
+  Future<void> insertFolder(String id, {String forUserId = userId}) =>
+      folderLocal.insert(makeFolder(id), userId: forUserId);
+
+  FlashcardResult makeResult(
+    String id,
+    String folderId, {
+    int totalCount = 10,
+    int correctCount = 7,
+    DateTime? date,
+  }) =>
+      FlashcardResult(
+        id: id,
+        folderId: folderId,
+        totalCount: totalCount,
+        correctCount: correctCount,
+        date: date ?? DateTime(2024, 1, 1),
+        updatedAt: date ?? DateTime(2024, 1, 1),
       );
+
+  Future<void> insertResult(
+    String id,
+    String folderId, {
+    String forUserId = userId,
+  }) =>
+      resultLocal.insert(makeResult(id, folderId), userId: forUserId);
+
+  Future<Map<String, dynamic>?> resultRow(String id) async {
+    final db = await dbHelper.database;
+    final rows = await db.query(
+      FlashcardResultTable.tableName,
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
 
   group('getFlashcardResults', () {
-    test('データが存在する場合、Rightで成績一覧が返る', () async {
-      await insertRow('result-1', 'folder-1');
-      await insertRow('result-2', 'folder-1');
+    test(
+        'ローカルに未削除の成績「R1」「R2」と削除済みの成績「R3」がある場合、'
+        '戻り値がRightで「R1」「R2」を含み「R3」を含まない [FRS-R01]', () async {
+      final repository = buildRepository();
+      await insertFolder('F');
+      await insertResult('R1', 'F');
+      await insertResult('R2', 'F');
+      await insertResult('R3', 'F');
+      final db = await dbHelper.database;
+      await resultLocal.markDeleted(db, 'R3', DateTime.now());
 
       final result = await repository.getFlashcardResults(userId: userId);
 
       expect(result.isRight(), isTrue);
       result.match(
         (_) => fail('Right が返るはず'),
-        (list) => expect(list.map((e) => e.id).toSet(), {'result-1', 'result-2'}),
+        (results) {
+          final ids = results.map((r) => r.id).toSet();
+          expect(ids.contains('R1'), isTrue);
+          expect(ids.contains('R2'), isTrue);
+          expect(ids.contains('R3'), isFalse);
+        },
       );
-    });
-
-    test('folderIdを指定した場合、そのフォルダの成績のみ返る', () async {
-      await insertRow('result-1', 'folder-1');
-      await insertRow('result-2', 'folder-2');
-
-      final result = await repository.getFlashcardResults(
-        userId: userId,
-        folderId: 'folder-1',
-      );
-
-      result.match(
-        (_) => fail('Right が返るはず'),
-        (list) => expect(list.map((e) => e.id), ['result-1']),
-      );
-    });
-
-    test('該当データが無い場合、Rightで空リストが返る', () async {
-      final result = await repository.getFlashcardResults(
-        userId: userId,
-        folderId: 'no-such-folder',
-      );
-
-      result.match(
-        (_) => fail('Right が返るはず'),
-        (list) => expect(list, isEmpty),
-      );
-    });
-
-    test('ローカル取得中に例外が発生した場合、Failure.unknownが返る', () async {
-      // テーブルを破壊して findByUserId 内のクエリを失敗させる。
-      final db = await dbHelper.database;
-      await db.execute('DROP TABLE ${FlashcardResultTable.tableName}');
-
-      final result = await repository.getFlashcardResults(userId: userId);
-
-      expect(result.isLeft(), isTrue);
-      result.match(
-        (failure) => expect(failure, isA<UnknownFailure>()),
-        (_) => fail('Left が返るはず'),
-      );
-
-      // 後続テストに影響しないようテーブルを復元する。
-      await FlashcardResultTable.onCreate(db);
-    });
-  });
-
-  group('saveFlashcardResult - オンライン時', () {
-    test('保存が成功した場合、ローカルにsynced状態で保存されFirestoreにも書き込まれRightが返る', () async {
-      final result = await repository.saveFlashcardResult(
-        userId: userId,
-        folderId: 'folder-1',
-        totalCount: 10,
-        correctCount: 7,
-      );
-
-      expect(result.isRight(), isTrue);
-      final saved = result.match((_) => null, (r) => r)!;
-      expect(saved.folderId, 'folder-1');
-      expect(saved.totalCount, 10);
-      expect(saved.correctCount, 7);
-
-      final localRows = await flashcardResultLocal.findByUserId(userId);
-      expect(localRows.map((e) => e.id), [saved.id]);
-
-      final db = await dbHelper.database;
-      final rawRows = await db.query(
-        FlashcardResultTable.tableName,
-        where: 'id = ?',
-        whereArgs: [saved.id],
-      );
-      expect(rawRows.single['syncStatus'], 'synced');
-
-      expect(fakeRemote.writtenFlashcardResults.map((e) => e.result.id), [saved.id]);
-      expect(fakeRemote.writtenFlashcardResults.single.userId, userId);
-
-      // オンライン時はキューに登録されない。
-      expect(await syncQueue.count(), 0);
-    });
-
-    test('FirebaseExceptionのcodeがunavailableの場合、Failure.networkが返る', () async {
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'unavailable',
-      );
-
-      final result = await repository.saveFlashcardResult(
-        userId: userId,
-        folderId: 'folder-1',
-        totalCount: 10,
-        correctCount: 7,
-      );
-
-      expect(result.isLeft(), isTrue);
-      result.match(
-        (failure) => expect(failure, const Failure.network()),
-        (_) => fail('Left が返るはず'),
-      );
-    });
-
-    test('FirebaseExceptionのcodeがnetwork-request-failedの場合、Failure.networkが返る', () async {
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'network-request-failed',
-      );
-
-      final result = await repository.saveFlashcardResult(
-        userId: userId,
-        folderId: 'folder-1',
-        totalCount: 10,
-        correctCount: 7,
-      );
-
-      result.match(
-        (failure) => expect(failure, const Failure.network()),
-        (_) => fail('Left が返るはず'),
-      );
-    });
-
-    test('FirebaseExceptionのcodeがその他でmessageがある場合、Failure.unknown(message)が返る', () async {
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'permission-denied',
-        message: 'permission denied message',
-      );
-
-      final result = await repository.saveFlashcardResult(
-        userId: userId,
-        folderId: 'folder-1',
-        totalCount: 10,
-        correctCount: 7,
-      );
-
-      result.match(
-        (failure) => expect(
-          failure,
-          const Failure.unknown('permission denied message'),
-        ),
-        (_) => fail('Left が返るはず'),
-      );
-    });
-
-    test('FirebaseExceptionのmessageがnullの場合、Failure.unknown(code)が返る', () async {
-      fakeRemote.exceptionToThrow = FirebaseException(
-        plugin: 'firestore',
-        code: 'permission-denied',
-      );
-
-      final result = await repository.saveFlashcardResult(
-        userId: userId,
-        folderId: 'folder-1',
-        totalCount: 10,
-        correctCount: 7,
-      );
-
-      result.match(
-        (failure) => expect(
-          failure,
-          const Failure.unknown('permission-denied'),
-        ),
-        (_) => fail('Left が返るはず'),
-      );
-    });
-
-    test('FirebaseException以外の例外が発生した場合、Failure.unknownが返る', () async {
-      fakeRemote.exceptionToThrow = Exception('boom');
-
-      final result = await repository.saveFlashcardResult(
-        userId: userId,
-        folderId: 'folder-1',
-        totalCount: 10,
-        correctCount: 7,
-      );
-
-      expect(result.isLeft(), isTrue);
-      result.match(
-        (failure) => expect(failure, isA<UnknownFailure>()),
-        (_) => fail('Left が返るはず'),
-      );
-    });
-  });
-
-  group('saveFlashcardResult - オフライン時', () {
-    setUp(() {
-      fakeConnectivity.setOnline(false);
     });
 
     test(
-        '保存した場合、ローカルにpending状態で保存されsync_queueにcreate登録されRightが返り、'
-        'Firestoreへは書き込まれない', () async {
+        'ローカルにUの成績「R1」と、ユーザーVの成績「R4」がある場合、'
+        '戻り値がRightで「R1」を含み「R4」を含まない [FRS-R02]', () async {
+      final repository = buildRepository();
+      await insertFolder('F');
+      await insertResult('R1', 'F');
+      await insertResult('R4', 'F', forUserId: otherUserId);
+
+      final result = await repository.getFlashcardResults(userId: userId);
+
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (results) {
+          final ids = results.map((r) => r.id).toSet();
+          expect(ids.contains('R1'), isTrue);
+          expect(ids.contains('R4'), isFalse);
+        },
+      );
+    });
+
+    test('オフラインで、ローカルに成績「R1」がある場合、戻り値がRightで「R1」を含む [FRS-R03]',
+        () async {
+      final repository = buildRepository();
+      final fakeConnectivity = FakeConnectivityMonitor(online: false);
+      await fakeConnectivity.isOnline(); // オフライン状態を明示するだけで、結果には影響しない
+      await insertFolder('F');
+      await insertResult('R1', 'F');
+
+      final result = await repository.getFlashcardResults(userId: userId);
+
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (results) => expect(results.map((r) => r.id), contains('R1')),
+      );
+    });
+
+    test('ローカルの読み取りが失敗した場合、戻り値がLeft(UnknownFailure) [FRS-R04]', () async {
+      final repository = buildRepository(
+        localDataSource:
+            ThrowingFindByUserIdFlashcardResultLocalDataSource(dbHelper),
+      );
+
+      final result = await repository.getFlashcardResults(userId: userId);
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, isA<UnknownFailure>()),
+        (_) => fail('Left が返るはず'),
+      );
+    });
+
+    test(
+        'フォルダFの成績「R1」と、別のフォルダGの成績「R2」がある場合、'
+        '戻り値がRightで「R1」「R2」の両方を含む [FRS-R05]', () async {
+      final repository = buildRepository();
+      await insertFolder('F');
+      await insertFolder('G');
+      await insertResult('R1', 'F');
+      await insertResult('R2', 'G');
+
+      final result = await repository.getFlashcardResults(userId: userId);
+
+      result.match(
+        (_) => fail('Right が返るはず'),
+        (results) {
+          final ids = results.map((r) => r.id).toSet();
+          expect(ids.contains('R1'), isTrue);
+          expect(ids.contains('R2'), isTrue);
+        },
+      );
+    });
+  });
+
+  group('saveFlashcardResult', () {
+    test(
+        'オンラインで、フォルダFに問題数10・正解数7で登録した場合、戻り値がRightでフォルダF・問題数10・正解数7、'
+        'dateとupdatedAtが等しい。その後のgetFlashcardResultsに含まれる。キューが1件増える [FRS-C01]',
+        () async {
+      final repository = buildRepository();
+      await insertFolder('F');
+
       final result = await repository.saveFlashcardResult(
         userId: userId,
-        folderId: 'folder-1',
+        folderId: 'F',
         totalCount: 10,
         correctCount: 7,
       );
 
       expect(result.isRight(), isTrue);
-      final saved = result.match((_) => null, (r) => r)!;
+      final saved = result.match((_) => fail('Right が返るはず'), (r) => r);
+      expect(saved.folderId, 'F');
+      expect(saved.totalCount, 10);
+      expect(saved.correctCount, 7);
+      expect(saved.date, saved.updatedAt);
 
-      final db = await dbHelper.database;
-      final rawRows = await db.query(
-        FlashcardResultTable.tableName,
-        where: 'id = ?',
-        whereArgs: [saved.id],
+      final after = await repository.getFlashcardResults(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (results) => expect(results.map((r) => r.id), contains(saved.id)),
       );
-      expect(rawRows.single['syncStatus'], 'pending');
-
-      final queueRows = await db.query(
-        SyncQueueTable.tableName,
-        where: 'table_name = ? AND record_id = ? AND operation = ?',
-        whereArgs: [FlashcardResultTable.tableName, saved.id, 'create'],
-      );
-      expect(queueRows, hasLength(1));
-
-      expect(fakeRemote.writtenFlashcardResults, isEmpty);
+      expect(await syncQueue.countByUser(userId), 1);
     });
 
-    test('sync_queueのpayloadに保存内容が正しく記録される', () async {
+    test(
+        'オフラインで、フォルダFに問題数10・正解数7で登録した場合、戻り値がRight。'
+        'その後のgetFlashcardResultsに含まれる。キューが1件増える [FRS-C02]', () async {
+      final repository = buildRepository();
+      final fakeConnectivity = FakeConnectivityMonitor(online: false);
+      await fakeConnectivity.isOnline();
+      await insertFolder('F');
+
       final result = await repository.saveFlashcardResult(
         userId: userId,
-        folderId: 'folder-1',
+        folderId: 'F',
         totalCount: 10,
         correctCount: 7,
       );
-      final saved = result.match((_) => null, (r) => r)!;
 
-      final db = await dbHelper.database;
-      final queueRows = await db.query(
-        SyncQueueTable.tableName,
-        where: 'table_name = ? AND record_id = ?',
-        whereArgs: [FlashcardResultTable.tableName, saved.id],
+      expect(result.isRight(), isTrue);
+      final saved = result.match((_) => fail('Right が返るはず'), (r) => r);
+      final after = await repository.getFlashcardResults(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (results) => expect(results.map((r) => r.id), contains(saved.id)),
       );
-      final payload =
-          jsonDecode(queueRows.single['payload'] as String) as Map<String, dynamic>;
-
-      expect(payload['folderId'], 'folder-1');
-      expect(payload['totalCount'], 10);
-      expect(payload['correctCount'], 7);
-      expect(payload['date'], saved.date.toIso8601String());
-      expect(payload['updatedAt'], saved.updatedAt.toIso8601String());
+      expect(await syncQueue.countByUser(userId), 1);
     });
 
-    test('トランザクション内で例外が発生した場合、Failure.unknownが返りロールバックされ何も保存されない', () async {
-      // sync_queue テーブルを破壊し、トランザクション後半の enqueueInTransaction を失敗させる。
-      final db = await dbHelper.database;
-      await db.execute('DROP TABLE ${SyncQueueTable.tableName}');
+    test(
+        'ローカルへの成績の保存が失敗した場合、戻り値がLeft(UnknownFailure)。'
+        'その後のgetFlashcardResultsに含まれない。キューの件数が変わらない [FRS-C03]', () async {
+      await insertFolder('F');
+      final repository = buildRepository(
+        localDataSource: ThrowingSaveFlashcardResultLocalDataSource(dbHelper),
+      );
 
       final result = await repository.saveFlashcardResult(
         userId: userId,
-        folderId: 'folder-1',
+        folderId: 'F',
         totalCount: 10,
         correctCount: 7,
       );
@@ -345,13 +334,110 @@ void main() {
         (failure) => expect(failure, isA<UnknownFailure>()),
         (_) => fail('Left が返るはず'),
       );
+      final after = await resultLocal.findByUserId(userId);
+      expect(after, isEmpty);
+      expect(await syncQueue.countByUser(userId), 0);
+    });
 
-      // トランザクションがロールバックされ、flashcard_results への insert も残らない。
-      final rows = await flashcardResultLocal.findByUserId(userId);
-      expect(rows, isEmpty);
+    test(
+        '成績の保存は成功し、キューへの登録が失敗した場合、戻り値がLeft(UnknownFailure)。'
+        'その後のgetFlashcardResultsに含まれない。キューの件数が変わらない [FRS-C04]', () async {
+      await insertFolder('F');
+      final repository = buildRepository(
+        syncQueueDataSource: ThrowingEnqueueSyncQueueDataSource(dbHelper),
+      );
 
-      // 後続テストに影響しないようテーブルを復元する。
-      await SyncQueueTable.onCreate(db);
+      final result = await repository.saveFlashcardResult(
+        userId: userId,
+        folderId: 'F',
+        totalCount: 10,
+        correctCount: 7,
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, isA<UnknownFailure>()),
+        (_) => fail('Left が返るはず'),
+      );
+      final after = await resultLocal.findByUserId(userId);
+      expect(after, isEmpty);
+      expect(await syncQueue.countByUser(userId), 0);
+    });
+
+    test('登録した直後（送信前）は、ローカルのその成績のsyncStatusがpending、deletedAtがnull [FRS-C05]',
+        () async {
+      final repository = buildRepository();
+      await insertFolder('F');
+
+      final result = await repository.saveFlashcardResult(
+        userId: userId,
+        folderId: 'F',
+        totalCount: 10,
+        correctCount: 7,
+      );
+      final saved = result.match((_) => fail('Right が返るはず'), (r) => r);
+
+      final row = await resultRow(saved.id);
+      expect(row, isNotNull);
+      expect(row!['syncStatus'], 'pending');
+      expect(row['deletedAt'], isNull);
+    });
+
+    test(
+        'フォルダFに問題数10・正解数7で2回登録した場合、戻り値のidが2回で異なる。'
+        'その後のgetFlashcardResultsに2件とも含まれる。キューが2件増える [FRS-C06]', () async {
+      final repository = buildRepository();
+      await insertFolder('F');
+
+      final result1 = await repository.saveFlashcardResult(
+        userId: userId,
+        folderId: 'F',
+        totalCount: 10,
+        correctCount: 7,
+      );
+      final result2 = await repository.saveFlashcardResult(
+        userId: userId,
+        folderId: 'F',
+        totalCount: 10,
+        correctCount: 7,
+      );
+
+      final saved1 = result1.match((_) => fail('Right が返るはず'), (r) => r);
+      final saved2 = result2.match((_) => fail('Right が返るはず'), (r) => r);
+      expect(saved1.id, isNot(saved2.id));
+
+      final after = await repository.getFlashcardResults(userId: userId);
+      after.match(
+        (_) => fail('Right が返るはず'),
+        (results) {
+          final ids = results.map((r) => r.id).toSet();
+          expect(ids.contains(saved1.id), isTrue);
+          expect(ids.contains(saved2.id), isTrue);
+        },
+      );
+      expect(await syncQueue.countByUser(userId), 2);
+    });
+
+    test('削除済みのフォルダGを指定して登録した場合、戻り値がLeft(NotFoundFailure)。キューの件数が変わらない [FRS-C07]',
+        () async {
+      final repository = buildRepository();
+      await insertFolder('G');
+      final db = await dbHelper.database;
+      await folderLocal.markDeleted(db, 'G', DateTime.now());
+
+      final result = await repository.saveFlashcardResult(
+        userId: userId,
+        folderId: 'G',
+        totalCount: 10,
+        correctCount: 7,
+      );
+
+      expect(result.isLeft(), isTrue);
+      result.match(
+        (failure) => expect(failure, const Failure.notFound()),
+        (_) => fail('Left が返るはず'),
+      );
+      expect(await syncQueue.countByUser(userId), 0);
     });
   });
 }

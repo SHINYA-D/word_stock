@@ -6,7 +6,7 @@
 |------|-----|
 | ファイルパス | lib/infrastructure/data_sources/local/word_local_data_source.dart |
 | クラス名 | WordLocalDataSource |
-| テスト対象メソッド | insert() / update() / delete() / findById() / findByFolderId() / upsert() / deleteByFolderId() |
+| テスト対象メソッド | insert() / update() / delete() / findById() / findByFolderId() / upsert() / deleteByFolderId() / findActive() / findActiveIdsByFolder() / save() / markDeleted() |
 
 ## 実行環境について
 
@@ -38,6 +38,18 @@ CRUD操作を行い、Dart Pure Testとして検証する。DateTime ↔ String(
 | 19 | syncStatusを指定しない場合、synced として保存される | 境界値 | upsert() | ✅ |
 | 20 | 指定したfolderIdのレコードが全て削除される | 正常系 | deleteByFolderId() | ✅ |
 | 21 | 該当レコードが存在しない場合でも例外が発生せず正常終了する | 異常系 | deleteByFolderId() | ✅ |
+| 22 | insertした場合、DBに保存されるcreatedAt/updatedAtがUTCのISO8601文字列(末尾Z)になる | 正常系 | insert() | ✅ |
+| 23 | Zの無いバージョン1形式の文字列が保存されている場合、端末のタイムゾーンの時刻として読み出せる | 境界値 | findById() | ✅ |
+| 24 | deletedAtが設定された単語を指定した場合、findByIdは削除済みでも取得できる | 正常系 | findById() | ✅ |
+| 25 | deletedAtが設定された単語が存在する場合、findByFolderIdの結果に含まれない | 正常系 | findByFolderId() | ✅ |
+| 26 | 自ユーザーの未削除の単語を指定した場合、その単語が取得できる | 正常系 | findActive() | ✅ |
+| 27 | 削除済みの単語を指定した場合、findActiveはnullを返す | 異常系 | findActive() | ✅ |
+| 28 | 他ユーザーの単語を指定した場合、findActiveはnullを返す | 異常系 | findActive() | ✅ |
+| 29 | 未削除の単語のみが存在する場合、それらのidが取得できる | 正常系 | findActiveIdsByFolder() | ✅ |
+| 30 | 他ユーザーの単語が存在する場合、そのidは含まれない | 異常系 | findActiveIdsByFolder() | ✅ |
+| 31 | 未登録の単語をsaveした場合、新規レコードとして挿入される | 正常系 | save() | ✅ |
+| 32 | 既存IDの単語をsaveした場合、レコードが置き換えられる（重複せず1件のまま） | 正常系 | save() | ✅ |
+| 33 | 存在する単語をmarkDeletedした場合、deletedAtとupdatedAtに指定時刻が入りpendingになる | 正常系 | markDeleted() | ✅ |
 
 ## テストケース詳細
 
@@ -208,3 +220,99 @@ CRUD操作を行い、Dart Pure Testとして検証する。DateTime ↔ String(
 - **入力値・テスト条件**: folderId='not-exist-folder'
 - **操作手順**: `deleteByFolderId('not-exist-folder')` を呼ぶ
 - **期待結果**: 例外を投げず`Future`が正常完了する（`completes`）
+
+### テストケース22: insertした場合、DBに保存されるcreatedAt/updatedAtがUTCのISO8601文字列(末尾Z)になる
+- **カテゴリ**: 正常系
+- **対象メソッド**: insert()
+- **事前条件**: テーブルが空
+- **入力値・テスト条件**: createdAt/updatedAtにローカル時刻を指定
+- **操作手順**: insert後にDBを直接クエリしてcreatedAt/updatedAt列を確認
+- **期待結果**: 両列とも末尾が'Z'の文字列（UTC）になっている
+
+### テストケース23: Zの無いバージョン1形式の文字列が保存されている場合、端末のタイムゾーンの時刻として読み出せる
+- **カテゴリ**: 境界値
+- **対象メソッド**: findById()
+- **事前条件**: 'word-1'がinsert済み
+- **入力値・テスト条件**: DBのcreatedAt列を末尾'Z'の無い旧バージョン1形式の文字列に直接書き換える
+- **操作手順**: `findById('word-1')` を呼ぶ
+- **期待結果**: 書き換えた文字列と同じ`DateTime`（端末のタイムゾーンの時刻として解釈）が返る
+
+### テストケース24: deletedAtが設定された単語を指定した場合、findByIdは削除済みでも取得できる
+- **カテゴリ**: 正常系
+- **対象メソッド**: findById()
+- **事前条件**: 'word-1'がinsert済みで`markDeleted`済み
+- **入力値・テスト条件**: id='word-1'
+- **操作手順**: `findById('word-1')` を呼ぶ
+- **期待結果**: 削除済みでもWordが返る（`findById`はdeletedAtで絞り込まない）
+
+### テストケース25: deletedAtが設定された単語が存在する場合、findByFolderIdの結果に含まれない
+- **カテゴリ**: 正常系
+- **対象メソッド**: findByFolderId()
+- **事前条件**: 同一folderに'word-1'（削除済み）・'word-2'（未削除）がinsert済み
+- **入力値・テスト条件**: folderId='folder-1', userId=自ユーザー
+- **操作手順**: `findByFolderId('folder-1', userId: userId)` を呼ぶ
+- **期待結果**: 'word-2'のみ返る（'word-1'は`deletedAt IS NULL`条件で除外）
+
+### テストケース26: 自ユーザーの未削除の単語を指定した場合、その単語が取得できる
+- **カテゴリ**: 正常系
+- **対象メソッド**: findActive()
+- **事前条件**: 'word-1'が自ユーザーでinsert済み
+- **入力値・テスト条件**: wordId='word-1', userId=自ユーザー
+- **操作手順**: `findActive(db, 'word-1', userId: userId)` を呼ぶ
+- **期待結果**: 該当するWordが返る
+
+### テストケース27: 削除済みの単語を指定した場合、findActiveはnullを返す
+- **カテゴリ**: 異常系
+- **対象メソッド**: findActive()
+- **事前条件**: 'word-1'がinsert済みで`markDeleted`済み
+- **入力値・テスト条件**: wordId='word-1', userId=自ユーザー
+- **操作手順**: `findActive(db, 'word-1', userId: userId)` を呼ぶ
+- **期待結果**: nullが返る
+
+### テストケース28: 他ユーザーの単語を指定した場合、findActiveはnullを返す
+- **カテゴリ**: 異常系
+- **対象メソッド**: findActive()
+- **事前条件**: 'word-1'が他ユーザーでinsert済み
+- **入力値・テスト条件**: wordId='word-1', userId=自ユーザー
+- **操作手順**: `findActive(db, 'word-1', userId: userId)` を呼ぶ
+- **期待結果**: nullが返る
+
+### テストケース29: 未削除の単語のみが存在する場合、それらのidが取得できる
+- **カテゴリ**: 正常系
+- **対象メソッド**: findActiveIdsByFolder()
+- **事前条件**: 同一folderに'word-1'（未削除）・'word-2'（削除済み）が自ユーザーでinsert済み
+- **入力値・テスト条件**: folderId='folder-1', userId=自ユーザー
+- **操作手順**: `findActiveIdsByFolder(db, 'folder-1', userId: userId)` を呼ぶ
+- **期待結果**: `['word-1']`のみ返る
+
+### テストケース30: 他ユーザーの単語が存在する場合、そのidは含まれない
+- **カテゴリ**: 異常系
+- **対象メソッド**: findActiveIdsByFolder()
+- **事前条件**: 'word-1'が他ユーザーでinsert済み
+- **入力値・テスト条件**: folderId='folder-1', userId=自ユーザー
+- **操作手順**: `findActiveIdsByFolder(db, 'folder-1', userId: userId)` を呼ぶ
+- **期待結果**: 空リストが返る
+
+### テストケース31: 未登録の単語をsaveした場合、新規レコードとして挿入される
+- **カテゴリ**: 正常系
+- **対象メソッド**: save()
+- **事前条件**: テーブルが空
+- **入力値・テスト条件**: id='word-1'
+- **操作手順**: `save(db, word, userId: userId, folderId: 'folder-1')` を呼び、findByIdで確認
+- **期待結果**: レコードが取得できる
+
+### テストケース32: 既存IDの単語をsaveした場合、レコードが置き換えられる（重複せず1件のまま）
+- **カテゴリ**: 正常系
+- **対象メソッド**: save()
+- **事前条件**: 'word-1'（front='旧'）が既に`save`済み
+- **入力値・テスト条件**: 同一idでfront='新'を再度save
+- **操作手順**: 2回目のsave後にfindByFolderIdで確認
+- **期待結果**: レコード数が1件のまま、frontが'新'に置き換わる
+
+### テストケース33: 存在する単語をmarkDeletedした場合、deletedAtとupdatedAtに指定時刻が入りpendingになる
+- **カテゴリ**: 正常系
+- **対象メソッド**: markDeleted()
+- **事前条件**: 'word-1'がinsert済み
+- **入力値・テスト条件**: deletedAt=DateTime(2024, 4, 1, 9, 0)
+- **操作手順**: `markDeleted(db, 'word-1', deletedAt)` を呼び、DBを直接クエリ・findByIdで確認
+- **期待結果**: syncStatus列が'pending'になり、findByIdのupdatedAtがdeletedAtと一致する
