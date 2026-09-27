@@ -49,8 +49,18 @@ SQLite（sqflite）をローカルキャッシュとして導入し、UI層は�
 同期フロー・競合解決の詳細は [docs/high_level_design/online_offline.md](docs/high_level_design/online_offline.md) を参照してください。
 
 ### テスト方針
-本プロジェクトのテストは、CI/CD パイプラインの実働証明を主目的としています。
-網羅的なテストカバレッジよりも、パイプライン上でテストが正常に実行され、結果に基づいてデプロイが制御されることの検証に重点を置いています。
+単体テスト・Widget テストは、Claude Code のパイプライン（Skill `test-loop`）で自動生成し、テスト項目書（Excel）まで作ります。
+
+- **仕様書を期待値の正とする**: 承認済みの詳細設計書（`docs/detailed_design/`）がある画面は、仕様書の各項目（仕様 ID）からテストの期待値を作ります。コードから期待値を作ると、バグがそのまま正解になってしまうためです。仕様書どおりの期待値でテストが落ちたら、テストではなくプロダクションコードのバグとして記録します
+- **合否はスクリプトが判定する**: ハーネス（`scripts/test_harness.sh`）がテスト結果とカバレッジを集計し、ループを続けるか止めるかを判定します。目標は、ロジックを持つファイル（限定分母）ごとにカバレッジ 90% 以上かつ全テスト成功です。仕様 ID の網羅・項目書とテストコードの一致・仕様書の変更（ずれ）も機械的に照合します
+- **独立レビュー**: テストを書いたエージェントとは別のエージェント（`test-fidelity-reviewer`）が、「そのテストは本当にその仕様を確かめているか」を確認します
+- **最後までやり切る**: Claude Code のフックで、Excel 生成まで工程を止められないようにしています。解消しきれなかった問題（カバレッジ未達・テスト失敗・プロダクションコードのバグなど）は、Excel の「要確認一覧」シートで報告します
+
+<p align="center">
+  <img src="docs/images/test_pipeline_overview.svg" alt="テスト自動生成パイプラインの全体図" width="800">
+</p>
+
+詳しくは [docs/development/test_loop_pipeline.md](docs/development/test_loop_pipeline.md)（パイプラインの解説）と [docs/development/hooks.md](docs/development/hooks.md)（フックの解説）を参照してください。手順の正は [.claude/skills/test-loop/SKILL.md](.claude/skills/test-loop/SKILL.md) です。
 
 ### CI/CD 設計
 - GitHub Secrets に Firebase キーを設定し、本番同等の環境で CI テストを実行
@@ -68,7 +78,8 @@ SQLite（sqflite）をローカルキャッシュとして導入し、UI層は�
 | ローカルDB・オフライン同期 | sqflite / connectivity_plus / sync_queue |
 | CI/CD | GitHub Actions |
 | バージョン管理 | FVM |
-| テスト | Widget Test / Unit Test（mockito, sqflite_common_ffi） |
+| テスト | Widget Test / Unit Test（手書き Fake・Mock Repository, sqflite_common_ffi） |
+| テスト自動生成 | Claude Code（Skill / サブエージェント / Hooks）+ Python ハーネス（openpyxl で Excel 項目書を生成） |
 
 ## 開発背景
 Flutter での設計力・実装力・インフラ構築力を証明する目的で開発しました。
@@ -104,9 +115,24 @@ fvm dart run build_runner watch --delete-conflicting-outputs
 ```
 
 ## テスト実行
+テストだけを実行する:
 ```
 fvm flutter test
 ```
+
+カバレッジ（限定分母）の集計とテスト漏れの検出まで行う（Python 3 が必要）:
+```
+bash scripts/test_harness.sh [<テストファイルのパス>]
+```
+結果は `coverage/harness_report.json` に出力されます。
+Claude Code から実行する場合は、フックで `fvm flutter test` の直接実行を禁止しているため、必ずこちらを使います。
+
+テストの自動生成（Claude Code）:
+```
+/test-loop [<lib/ 配下の対象ファイル>...]
+```
+対象を省略すると全対象を消化します。完了すると `~/Desktop/WordStock_テスト項目書_YYYYMMDD.xlsx` が生成されます。
+Excel 生成には `pip install -r scripts/requirements.txt`（openpyxl）が必要です。
 
 ## 要件定義書
 コーディングに関するルールや設計方針は以下を参照してください。
@@ -115,6 +141,8 @@ fvm flutter test
 
 なお、上記要件定義書には「オンライン必須・ローカルキャッシュ不採用」という記載がありますが、これは作成時点の古い記述です。
 現在はオフライン同期対応へ移行中のため、最新の方針は [docs/high_level_design/online_offline.md](docs/high_level_design/online_offline.md) を参照してください。
+
+画面・機能ごとの振る舞い仕様書（詳細設計書）は `docs/detailed_design/` にあり、テストの期待値の根拠になります（例: [サンプル画面](docs/detailed_design/presentation/sample/sample_page.md)）。
 
 <details>
 <summary>環境構築手順（クリックで展開）</summary>

@@ -1022,8 +1022,23 @@ def misfiled_bug_failures(failures: list[dict], state: dict) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # verdict
 # --------------------------------------------------------------------------- #
+def in_limited_denominator(target: str) -> bool:
+    """限定分母（カバレッジを判定に使う対象）かどうか。
+
+    正は `harness_report.is_target()` ただ1つ。ここで独自に決めたり、
+    harness_report.json の中身から推測したりしない（過去に、レポートに一覧が
+    無いときの既定値「対象とみなす」が Page に当たり、Widget テストだけ
+    can-skip が必ず「生成が必要」を返していた）。
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import harness_report  # harness_report が loop_state を import するので遅延させる
+    return harness_report.is_target(target.replace("\\", "/"))
+
+
 def compute_verdict(report: dict, target: str | None, state: dict,
-                    in_denominator: bool = True) -> dict:
+                    in_denominator: bool | None = None) -> dict:
     """ループを継続すべきか（continue / stop / n/a）を算出する。
 
     まず上限を無視して「失敗 → 達成 → 理由あり → それ以外」の順に判定し、
@@ -1036,7 +1051,10 @@ def compute_verdict(report: dict, target: str | None, state: dict,
 
     `in_denominator=False`（Widget テストの Page など限定分母外）のときは
     カバレッジを見ず、全テスト green かどうかだけで判定する。
+    省略時は `in_limited_denominator()`（＝ harness_report.is_target()）で決める。
     """
+    if in_denominator is None:
+        in_denominator = bool(target) and in_limited_denominator(target)
     loop = _goal_verdict(report, target, state, in_denominator)
     if loop["verdict"] != "continue":
         return loop
@@ -1272,9 +1290,7 @@ def can_skip_generation(target: str, report: dict, state: dict) -> dict:
             "loop": {},
             "spec_checked": False,
         }
-    loop = compute_verdict(report, target, state,
-                           in_denominator=target in (report.get("coverage", {})
-                                                     .get("target_files", []) or [target]))
+    loop = compute_verdict(report, target, state)
     reasons: list[str] = []
     if loop.get("verdict") != "stop":
         reasons.append(f"ループ判定が stop ではない（{loop.get('reason')}）")
@@ -1314,6 +1330,32 @@ def can_skip_generation(target: str, report: dict, state: dict) -> dict:
         "loop": loop,
         "spec_checked": bool(sc),
         "unapproved_spec": (unapproved_spec_for(target) or {}).get("path") if not sc else None,
+    }
+
+
+def rerun_check(report: dict, state: dict) -> dict:
+    """2回目の点検: 今回完了した全対象で「何も変えずに再実行したら生成が飛ばされるか」。
+
+    観点「2回目の実行で成果物が変わらない」を、2回目を待たずに1回目の中で確かめる。
+    can_skip_generation() と同じ判定を、全体実行（手順8）のレポートから対象ごとに
+    組み立て直して行う（spec / doc_sync は全体実行のレポートには無いので作り直す）。
+
+    結果は state["rerun_check"] に記録し、gen_test_excel.py が「要確認一覧」に載せる。
+    進捗ステートは毎回破棄されるので、この結果が2回目の判定に持ち越されることはない
+    （2回目は、その時点の仕様書とテストで判定し直す）。
+    """
+    tests = report.get("tests") or {}
+    results: dict[str, dict] = {}
+    for target in sorted(state.get("done") or []):
+        view = dict(report)
+        view["spec"] = spec_coverage(target)
+        view["doc_sync"] = doc_test_sync(target, tests)
+        res = can_skip_generation(target, view, state)
+        results[target] = {"can_skip": res["can_skip"], "reason": res["reason"]}
+    return {
+        "checked_at": _now().isoformat(),
+        "report_generated_at": report.get("generated_at"),
+        "results": results,
     }
 
 
@@ -1369,6 +1411,13 @@ def main() -> int:
         "can-skip",
         help="既存のテストだけで基準を満たしているか判定する（満たしていれば生成を飛ばす）")
     p.add_argument("target")
+    p.add_argument("--report",
+                   default=os.path.join(REPO, "coverage", "harness_report.json"))
+
+    p = sub.add_parser(
+        "rerun-check",
+        help="2回目の点検: 完了した全対象で、何も変えずに再実行したら生成が飛ばされるかを確かめる"
+             "（全体ハーネスの後・Excel 生成の前に実行）")
     p.add_argument("--report",
                    default=os.path.join(REPO, "coverage", "harness_report.json"))
 
@@ -1498,6 +1547,34 @@ def main() -> int:
         elif res["loop"] and not res["spec_checked"]:
             print("      ※ 承認済みの仕様書が見つからないため、仕様 ID の網羅は判定していない")
         return 0 if res["can_skip"] else 1
+
+    if args.cmd == "rerun-check":
+        try:
+            with open(args.report, encoding="utf-8") as f:
+                report = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            print(f"{args.report} を読めません", file=sys.stderr)
+            return 2
+        if report.get("paths"):
+            print("⚠ 全体実行（bash scripts/test_harness.sh を引数なし）のレポートで点検してください。"
+                  "今のレポートはパス指定の実行結果です", file=sys.stderr)
+            return 2
+        if not session_active():
+            print("test-loop のセッションがありません（点検する対象がない）", file=sys.stderr)
+            return 2
+        state = load_state(create=False)
+        rc = rerun_check(report, state)
+        state["rerun_check"] = rc
+        save_state(state)
+        ng = [t for t, r in rc["results"].items() if not r["can_skip"]]
+        for t, r in rc["results"].items():
+            mark = "■ 2回目は生成を飛ばす" if r["can_skip"] else "▶ 2回目も生成が走る"
+            print(f"{mark}: {t}")
+            if not r["can_skip"]:
+                print(f"      理由: {r['reason']}")
+        print(f"\n点検 {len(rc['results'])} 件 / 再生成の見込み {len(ng)} 件"
+              "（結果は state.json に記録し、Excel の要確認一覧に載る）")
+        return 0 if not ng else 1
 
     if args.cmd == "finish":
         finish(args.target, args.status, args.reason)
