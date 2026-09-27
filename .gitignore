@@ -58,7 +58,7 @@ android/local.properties
 dart_define_dev.env
 
 # Firebase
-lib/firebase_options.dart
+lib/core/firebase/options/firebase_options_*.dart
 **/google-services.json
 **/GoogleService-Info.plist
 

@@ -86,7 +86,6 @@ infrastructure/ # インフラ層：Firebase実装・外部サービス
 lib/
 ├── main.dart
 ├── app.dart                          # アプリのルート・テーマ・ルーティング設定
-├── firebase_options.dart             # FlutterFire 自動生成
 │
 ├── core/                             # 共通ユーティリティ・定数・エラー定義
 │   ├── di/                           # Riverpod Provider 定義（DI）
@@ -102,7 +101,10 @@ lib/
 │   ├── error/
 │   │   └── failure.dart              # Failure ユニオン型定義
 │   ├── firebase/
-│   │   └── firestore_path.dart       # Firestore パス生成ユーティリティ
+│   │   ├── firestore_path.dart       # Firestore パス生成ユーティリティ
+│   │   └── options/                  # FlutterFire 自動生成（環境別、git管理外）
+│   │       ├── firebase_options_dev.dart
+│   │       └── firebase_options_prod.dart
 │   ├── router/
 │   │   └── router.dart               # go_router 設定・認証リダイレクト
 │   ├── theme/

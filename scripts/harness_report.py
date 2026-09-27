@@ -60,7 +60,7 @@ def is_target(path: str) -> bool:
         return False
     if "/mock/" in p:
         return False
-    if p == "lib/main.dart" or p.endswith("firebase_options.dart"):
+    if p == "lib/main.dart" or p.startswith("lib/core/firebase/options/"):
         return False
 
     if p.startswith("lib/presentation/"):

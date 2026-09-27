@@ -74,7 +74,7 @@ fvm flutter run --dart-define=USE_MOCKS=true
 - 分母は「限定分母」= `lib/domain/entities/` のうちロジックを持つもの・`lib/application/use_cases/`・
   `lib/infrastructure/repositories/`（`mock/` 除く）・`lib/infrastructure/sync/`・
   `lib/infrastructure/data_sources/local/`・`lib/presentation/**/*_view_model.dart`・`lib/core/utils/`
-- 除外 = `*.freezed.dart` / `*.g.dart` / `router.g.dart` / `main.dart` / `firebase_options.dart` / 純粋UI Widget / Mock実装
+- 除外 = `*.freezed.dart` / `*.g.dart` / `router.g.dart` / `main.dart` / `lib/core/firebase/options/firebase_options_*.dart` / 純粋UI Widget / Mock実装
 - 限定分母に対して **90%+** を目標（対象ファイル単位）。計測は `bash scripts/test_harness.sh` が自動で行う。
   全体カバレッジは ⚠ 表示のみでハーネスの合否には使わない。90% 未満のファイルは Excel 項目書の
   「要確認一覧」シートに、項目書の `## 対象外` に理由があれば「90%未満（理由あり）」、無ければ赤字の
