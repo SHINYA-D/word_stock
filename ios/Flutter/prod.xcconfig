@@ -1,0 +1,3 @@
+// prod フレーバー固有の設定
+// Google サインインの URL スキーム（config/prod/GoogleService-Info.plist の REVERSED_CLIENT_ID）
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.409683806995-r82ofi9h1lm55h11769vksjqesanp4sr

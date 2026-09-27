@@ -235,24 +235,42 @@ fvm use 3.41.5
 fvm dart pub global activate flutterfire_cli
 ```
 > `flutterfire`コマンドが見つからない場合は`~/.pub-cache/bin`にPATHが通っているか確認してください。
+> iOS のビルド時にも `flutterfire` コマンドを使う（ビルド設定に応じた `GoogleService-Info.plist` をアプリに同梱するため）ので、アプリをビルドするマシンには必ずインストールしてください。
 
-⑨ Firebase にログインし、設定ファイルを生成する（`lib/core/firebase/options/firebase_options_dev.dart` が生成される）
+⑨ Firebase にログインし、環境（フレーバー）ごとに設定ファイルを生成する
+
+| フレーバー | Firebase プロジェクト |
+|-----------|----------------------|
+| `dev` | `word-stock-2026-test` |
+| `prod` | `word-stock-prod` |
+
 ```
 firebase login
-flutterfire configure --out=lib/core/firebase/options/firebase_options_dev.dart
-```
 
-⑩ Firebaseコンソールから各ファイルをダウンロードして配置する
+# 開発
+flutterfire configure --project=word-stock-2026-test --platforms=android,ios \
+  --out=lib/core/firebase/options/firebase_options_dev.dart \
+  --android-out=android/app/src/dev/google-services.json \
+  --ios-out=ios/config/dev/GoogleService-Info.plist
 
-Firebaseコンソール > 設定 > 全般 > 一番下までスクロール後、各ファイルをダウンロード
+# 本番
+flutterfire configure --project=word-stock-prod --platforms=android,ios \
+  --out=lib/core/firebase/options/firebase_options_prod.dart \
+  --android-out=android/app/src/prod/google-services.json \
+  --ios-out=ios/config/prod/GoogleService-Info.plist
+```
+> iOS の構成の種類を聞かれたら「Build configuration」を選び、開発は `Debug-dev`、本番は `Release-prod` を選ぶ。
+> どのビルド設定がどの plist を使うかは `firebase.json` に登録済み。実行後に `firebase.json` や `ios/Runner.xcodeproj/project.pbxproj` に差分が出た場合は、コミットせずに元に戻す。
 
-**Android:**
+⑩ 以下の6ファイルが揃っていることを確認する（いずれも git 管理外。コンソールからダウンロードして配置してもよい）
+
 ```
-/word_stock/android/app/google-services.json
-```
-**iOS:**
-```
-/word_stock/ios/Runner/GoogleService-Info.plist
+lib/core/firebase/options/firebase_options_dev.dart
+lib/core/firebase/options/firebase_options_prod.dart
+android/app/src/dev/google-services.json
+android/app/src/prod/google-services.json
+ios/config/dev/GoogleService-Info.plist
+ios/config/prod/GoogleService-Info.plist
 ```
 
 ⑪ 環境変数の設定ファイルを配置する（担当者からもらってください）
@@ -262,9 +280,13 @@ Firebaseコンソール > 設定 > 全般 > 一番下までスクロール後、
 fvm flutter pub get
 ```
 
-⑬ ビルドを実行する
+⑬ フレーバーを指定してビルドを実行する（`--flavor` を省略すると `dev` になる）
 ```
-fvm flutter run
+# 開発（word-stock-2026-test に接続）
+fvm flutter run --flavor dev
+
+# 本番（word-stock-prod に接続）
+fvm flutter run --flavor prod
 ```
 
 </details>

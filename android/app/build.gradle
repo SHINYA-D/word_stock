@@ -54,6 +54,17 @@ android {
         versionName flutterVersionName
     }
 
+    // google-services.json はフレーバーごとに src/<フレーバー>/ に置く（git管理外）
+    flavorDimensions += "env"
+    productFlavors {
+        dev {
+            dimension "env"
+        }
+        prod {
+            dimension "env"
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
