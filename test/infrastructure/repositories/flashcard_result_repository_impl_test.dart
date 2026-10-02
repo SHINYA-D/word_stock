@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:word_stock/core/error/failure.dart';
 import 'package:word_stock/domain/entities/flashcard_result.dart';
@@ -18,10 +17,8 @@ import 'package:word_stock/infrastructure/repositories/flashcard_result_reposito
 import '../../helpers/fake_infrastructure.dart';
 
 /// ローカルへの成績の保存で例外を投げる（FRS-C03）。
-class ThrowingSaveFlashcardResultLocalDataSource
-    extends FlashcardResultLocalDataSource {
-  ThrowingSaveFlashcardResultLocalDataSource(DatabaseHelper dbHelper)
-      : super(dbHelper);
+class ThrowingSaveFlashcardResultLocalDataSource extends FlashcardResultLocalDataSource {
+  ThrowingSaveFlashcardResultLocalDataSource(super.dbHelper);
 
   @override
   Future<void> save(
@@ -35,10 +32,8 @@ class ThrowingSaveFlashcardResultLocalDataSource
 }
 
 /// ローカルの読み取りで例外を投げる（FRS-R04）。
-class ThrowingFindByUserIdFlashcardResultLocalDataSource
-    extends FlashcardResultLocalDataSource {
-  ThrowingFindByUserIdFlashcardResultLocalDataSource(DatabaseHelper dbHelper)
-      : super(dbHelper);
+class ThrowingFindByUserIdFlashcardResultLocalDataSource extends FlashcardResultLocalDataSource {
+  ThrowingFindByUserIdFlashcardResultLocalDataSource(super.dbHelper);
 
   @override
   Future<List<FlashcardResult>> findByUserId(
@@ -51,7 +46,7 @@ class ThrowingFindByUserIdFlashcardResultLocalDataSource
 
 /// キューへの登録で例外を投げる（FRS-C04）。
 class ThrowingEnqueueSyncQueueDataSource extends SyncQueueDataSource {
-  ThrowingEnqueueSyncQueueDataSource(DatabaseHelper dbHelper) : super(dbHelper);
+  ThrowingEnqueueSyncQueueDataSource(super.dbHelper);
 
   @override
   Future<void> enqueueInTransaction(
@@ -206,8 +201,7 @@ void main() {
       );
     });
 
-    test('オフラインで、ローカルに成績「R1」がある場合、戻り値がRightで「R1」を含む [FRS-R03]',
-        () async {
+    test('オフラインで、ローカルに成績「R1」がある場合、戻り値がRightで「R1」を含む [FRS-R03]', () async {
       final repository = buildRepository();
       final fakeConnectivity = FakeConnectivityMonitor(online: false);
       await fakeConnectivity.isOnline(); // オフライン状態を明示するだけで、結果には影響しない
@@ -224,8 +218,7 @@ void main() {
 
     test('ローカルの読み取りが失敗した場合、戻り値がLeft(UnknownFailure) [FRS-R04]', () async {
       final repository = buildRepository(
-        localDataSource:
-            ThrowingFindByUserIdFlashcardResultLocalDataSource(dbHelper),
+        localDataSource: ThrowingFindByUserIdFlashcardResultLocalDataSource(dbHelper),
       );
 
       final result = await repository.getFlashcardResults(userId: userId);
@@ -262,8 +255,7 @@ void main() {
   group('saveFlashcardResult', () {
     test(
         'オンラインで、フォルダFに問題数10・正解数7で登録した場合、戻り値がRightでフォルダF・問題数10・正解数7、'
-        'dateとupdatedAtが等しい。その後のgetFlashcardResultsに含まれる。キューが1件増える [FRS-C01]',
-        () async {
+        'dateとupdatedAtが等しい。その後のgetFlashcardResultsに含まれる。キューが1件増える [FRS-C01]', () async {
       final repository = buildRepository();
       await insertFolder('F');
 
@@ -364,8 +356,7 @@ void main() {
       expect(await syncQueue.countByUser(userId), 0);
     });
 
-    test('登録した直後（送信前）は、ローカルのその成績のsyncStatusがpending、deletedAtがnull [FRS-C05]',
-        () async {
+    test('登録した直後（送信前）は、ローカルのその成績のsyncStatusがpending、deletedAtがnull [FRS-C05]', () async {
       final repository = buildRepository();
       await insertFolder('F');
 
@@ -418,8 +409,7 @@ void main() {
       expect(await syncQueue.countByUser(userId), 2);
     });
 
-    test('削除済みのフォルダGを指定して登録した場合、戻り値がLeft(NotFoundFailure)。キューの件数が変わらない [FRS-C07]',
-        () async {
+    test('削除済みのフォルダGを指定して登録した場合、戻り値がLeft(NotFoundFailure)。キューの件数が変わらない [FRS-C07]', () async {
       final repository = buildRepository();
       await insertFolder('G');
       final db = await dbHelper.database;

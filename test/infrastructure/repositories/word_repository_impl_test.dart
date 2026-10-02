@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:word_stock/core/error/failure.dart';
 import 'package:word_stock/domain/entities/folder.dart';
@@ -20,7 +19,7 @@ import '../../helpers/fake_infrastructure.dart';
 
 /// ローカルへの単語の保存で例外を投げる（WRD-C03, WRD-U05）。
 class ThrowingSaveWordLocalDataSource extends WordLocalDataSource {
-  ThrowingSaveWordLocalDataSource(DatabaseHelper dbHelper) : super(dbHelper);
+  ThrowingSaveWordLocalDataSource(super.dbHelper);
 
   @override
   Future<void> save(
@@ -36,8 +35,7 @@ class ThrowingSaveWordLocalDataSource extends WordLocalDataSource {
 
 /// ローカルの読み取りで例外を投げる（WRD-R05）。
 class ThrowingFindByFolderIdWordLocalDataSource extends WordLocalDataSource {
-  ThrowingFindByFolderIdWordLocalDataSource(DatabaseHelper dbHelper)
-      : super(dbHelper);
+  ThrowingFindByFolderIdWordLocalDataSource(super.dbHelper);
 
   @override
   Future<List<Word>> findByFolderId(
@@ -50,8 +48,7 @@ class ThrowingFindByFolderIdWordLocalDataSource extends WordLocalDataSource {
 
 /// 単語の論理削除（保存）で例外を投げる（WRD-X05）。
 class ThrowingMarkDeletedWordLocalDataSource extends WordLocalDataSource {
-  ThrowingMarkDeletedWordLocalDataSource(DatabaseHelper dbHelper)
-      : super(dbHelper);
+  ThrowingMarkDeletedWordLocalDataSource(super.dbHelper);
 
   @override
   Future<void> markDeleted(DatabaseExecutor db, String wordId, DateTime at) {
@@ -61,7 +58,7 @@ class ThrowingMarkDeletedWordLocalDataSource extends WordLocalDataSource {
 
 /// キューへの登録で例外を投げる（WRD-C04, WRD-U08, WRD-X07）。
 class ThrowingEnqueueSyncQueueDataSource extends SyncQueueDataSource {
-  ThrowingEnqueueSyncQueueDataSource(DatabaseHelper dbHelper) : super(dbHelper);
+  ThrowingEnqueueSyncQueueDataSource(super.dbHelper);
 
   @override
   Future<void> enqueueInTransaction(
