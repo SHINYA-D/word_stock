@@ -207,7 +207,7 @@ void main() {
         'samples が AsyncError(UnknownFailure) になる '
         '[SMP-V04 #9f3345]', () async {
       final getSamples =
-          FakeGetSamplesUseCase([Left(Failure.unknown('boom'))]);
+          FakeGetSamplesUseCase([const Left(Failure.unknown('boom'))]);
       final container = _makeContainer(getSamplesUseCase: getSamples);
 
       await _flush();
@@ -268,7 +268,7 @@ void main() {
         'samples が AsyncData([A]) になり、Repository の getSamples が2回目の呼び出しでも userId u1 で呼ばれる '
         '[SMP-V08 #e2bf2c]', () async {
       final getSamples = FakeGetSamplesUseCase(
-        [Left(Failure.unknown('boom')), Right([_sampleA])],
+        [const Left(Failure.unknown('boom')), Right([_sampleA])],
       );
       final container = _makeContainer(getSamplesUseCase: getSamples);
       await _flush();
@@ -286,7 +286,7 @@ void main() {
         'samples が AsyncLoading になる '
         '[SMP-V09 #0551fd]', () async {
       final getSamples = FakeGetSamplesUseCase(
-        [Left(Failure.unknown('boom')), Right([_sampleA])],
+        [const Left(Failure.unknown('boom')), Right([_sampleA])],
       );
       final container = _makeContainer(getSamplesUseCase: getSamples);
       await _flush();
@@ -304,7 +304,7 @@ void main() {
         'getSamples が再び UnknownFailure を返した場合、samples が AsyncError(UnknownFailure) になる '
         '[SMP-V10 #0e8d4b]', () async {
       final getSamples = FakeGetSamplesUseCase(
-        [Left(Failure.unknown('boom')), Left(Failure.unknown('boom2'))],
+        [const Left(Failure.unknown('boom')), const Left(Failure.unknown('boom2'))],
       );
       final container = _makeContainer(getSamplesUseCase: getSamples);
       await _flush();
@@ -322,7 +322,7 @@ void main() {
         'getSamples が NotFoundFailure を返した場合、samples が AsyncError(NotFoundFailure) になる '
         '[SMP-V11 #86bf63]', () async {
       final getSamples = FakeGetSamplesUseCase(
-        [Left(Failure.unknown('boom')), const Left(Failure.notFound())],
+        [const Left(Failure.unknown('boom')), const Left(Failure.notFound())],
       );
       final container = _makeContainer(getSamplesUseCase: getSamples);
       await _flush();
@@ -340,7 +340,7 @@ void main() {
         'getSamples が NetworkFailure を返した場合、operationFailure が NetworkFailure になる '
         '[SMP-V12 #d97a68]', () async {
       final getSamples = FakeGetSamplesUseCase(
-        [Left(Failure.unknown('boom')), const Left(Failure.network())],
+        [const Left(Failure.unknown('boom')), const Left(Failure.network())],
       );
       final container = _makeContainer(getSamplesUseCase: getSamples);
       await _flush();
@@ -359,7 +359,7 @@ void main() {
         'getSamples が AuthFailure を返した場合、operationFailure が AuthFailure になる '
         '[SMP-V13 #0ea055]', () async {
       final getSamples = FakeGetSamplesUseCase(
-        [Left(Failure.unknown('boom')), const Left(Failure.auth())],
+        [const Left(Failure.unknown('boom')), const Left(Failure.auth())],
       );
       final container = _makeContainer(getSamplesUseCase: getSamples);
       await _flush();
@@ -396,7 +396,7 @@ void main() {
         'samples が AsyncData([A]) のままになり、operationFailure が UnknownFailure になる '
         '[SMP-V15 #e5b719]', () async {
       final getSamples = FakeGetSamplesUseCase(
-        [Right([_sampleA]), Left(Failure.unknown('boom'))],
+        [Right([_sampleA]), const Left(Failure.unknown('boom'))],
       );
       final container = _makeContainer(getSamplesUseCase: getSamples);
       await _flush();
@@ -580,7 +580,7 @@ void main() {
         'operationFailure が UnknownFailure になる '
         '[SMP-V23 #0398ac]', () async {
       final getSamples = FakeGetSamplesUseCase([Right([_sampleA])]);
-      final create = FakeCreateSampleUseCase(Left(Failure.unknown('boom')));
+      final create = FakeCreateSampleUseCase(const Left(Failure.unknown('boom')));
       final container = _makeContainer(
         getSamplesUseCase: getSamples,
         createSampleUseCase: create,
@@ -601,7 +601,7 @@ void main() {
         'operationFailure が UnknownFailure になる '
         '[SMP-V24 #b8ebc4]', () async {
       final getSamples = FakeGetSamplesUseCase([const Right([])]);
-      final create = FakeCreateSampleUseCase(Left(Failure.unknown('boom')));
+      final create = FakeCreateSampleUseCase(const Left(Failure.unknown('boom')));
       final container = _makeContainer(
         getSamplesUseCase: getSamples,
         createSampleUseCase: create,
@@ -754,7 +754,7 @@ void main() {
         'operationFailure が UnknownFailure になる '
         '[SMP-V30 #f37e41]', () async {
       final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
-      final update = FakeUpdateSampleUseCase(Left(Failure.unknown('boom')));
+      final update = FakeUpdateSampleUseCase(const Left(Failure.unknown('boom')));
       final container = _makeContainer(
         getSamplesUseCase: getSamples,
         updateSampleUseCase: update,
@@ -933,7 +933,7 @@ void main() {
         'operationFailure が UnknownFailure になる '
         '[SMP-V38 #b32133]', () async {
       final getSamples = FakeGetSamplesUseCase([Right([_sampleA, _sampleB])]);
-      final delete = FakeDeleteSampleUseCase(Left(Failure.unknown('boom')));
+      final delete = FakeDeleteSampleUseCase(const Left(Failure.unknown('boom')));
       final container = _makeContainer(
         getSamplesUseCase: getSamples,
         deleteSampleUseCase: delete,

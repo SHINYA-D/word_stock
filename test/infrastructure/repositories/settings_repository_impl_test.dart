@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:word_stock/core/error/failure.dart';
 import 'package:word_stock/domain/entities/user_settings.dart';
@@ -17,8 +16,7 @@ import '../../helpers/fake_infrastructure.dart';
 /// ローカルの読み取りで例外を投げる（STG-R05）。
 class ThrowingFindByUserIdSettingsLocalDataSource
     extends SettingsLocalDataSource {
-  ThrowingFindByUserIdSettingsLocalDataSource(DatabaseHelper dbHelper)
-      : super(dbHelper);
+  ThrowingFindByUserIdSettingsLocalDataSource(super.dbHelper);
 
   @override
   Future<UserSettings?> findByUserId(String userId) {
@@ -28,8 +26,7 @@ class ThrowingFindByUserIdSettingsLocalDataSource
 
 /// ローカルへの保存で例外を投げる（STG-U04）。
 class ThrowingSaveSettingsLocalDataSource extends SettingsLocalDataSource {
-  ThrowingSaveSettingsLocalDataSource(DatabaseHelper dbHelper)
-      : super(dbHelper);
+  ThrowingSaveSettingsLocalDataSource(super.dbHelper);
 
   @override
   Future<void> save(
@@ -44,7 +41,7 @@ class ThrowingSaveSettingsLocalDataSource extends SettingsLocalDataSource {
 
 /// キューへの登録で例外を投げる（STG-U05）。
 class ThrowingEnqueueSyncQueueDataSource extends SyncQueueDataSource {
-  ThrowingEnqueueSyncQueueDataSource(DatabaseHelper dbHelper) : super(dbHelper);
+  ThrowingEnqueueSyncQueueDataSource(super.dbHelper);
 
   @override
   Future<void> enqueueInTransaction(

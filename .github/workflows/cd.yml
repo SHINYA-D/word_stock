@@ -9,7 +9,8 @@ on:
       - main
 
 jobs:
-  deploy:
+  # テスト環境（dev）: Repository secrets を使う
+  deploy-dev:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -17,14 +18,46 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # CI が成功したコミットをデプロイする（実行中に main が進んでも未テストのルールを出さない）
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup Firebase CLI
         run: npm install -g firebase-tools
 
       - name: Authenticate to Firebase
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > $HOME/firebase-sa.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/firebase-sa.json" >> $GITHUB_ENV
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$HOME/firebase-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/firebase-sa.json" >> "$GITHUB_ENV"
 
       - name: Deploy Firestore Security Rules
-        run: firebase deploy --only firestore:rules --project ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: firebase deploy --only firestore:rules --project "${{ secrets.FIREBASE_PROJECT_ID }}"
+
+  # 本番環境（prod）: Environment「prod」の secrets（同名で本番の値）を使う
+  # dev へのデプロイが成功したときだけ実行する
+  deploy-prod:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: prod
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Authenticate to Firebase
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$HOME/firebase-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$HOME/firebase-sa.json" >> "$GITHUB_ENV"
+
+      - name: Deploy Firestore Security Rules
+        run: firebase deploy --only firestore:rules --project "${{ secrets.FIREBASE_PROJECT_ID }}"
