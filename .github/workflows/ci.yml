@@ -29,16 +29,23 @@ jobs:
       - name: Make .fvm/flutter_sdk
         run: ln -s ${{ steps.flutter-action.outputs.CACHE-PATH }} .fvm/flutter_sdk
 
+      # main.dart は dev / prod 両方の options を import するため、prod 側には dev のコピーを置く
+      # （両ファイルのクラス名は同じ DefaultFirebaseOptions で、main.dart では as 付きで import している）
       - name: Decode firebase_options_dev.dart
         run: |
           mkdir -p lib/core/firebase/options
-          echo ${{ secrets.FIREBASE_OPTIONS_BASE64 }} | base64 --decode > lib/core/firebase/options/firebase_options_dev.dart
+          echo "${{ secrets.FIREBASE_OPTIONS_BASE64 }}" | base64 --decode > lib/core/firebase/options/firebase_options_dev.dart
+          cp lib/core/firebase/options/firebase_options_dev.dart lib/core/firebase/options/firebase_options_prod.dart
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Run code generation
         run: dart run build_runner build --delete-conflicting-outputs
+
+      # テストから読み込まれないファイル（main.dart 等）のコンパイルエラーや lint 違反も検出する
+      - name: Run static analysis
+        run: flutter analyze
 
       - name: Run Widget Tests
         run: flutter test
